@@ -1,0 +1,32 @@
+/.vscode
+/geckodriver.log
+/__pycache__
+rs19_val/
+wandb/
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+models/
+# pyenv
+.python-version
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.vscode
+
+*.xlsx
+*.ini
+jobData/xresnet50.pkl
+jobData/chuck_norris.pkl
+
+note.py

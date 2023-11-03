@@ -560,3 +560,5 @@ Epoch 0: Train Loss: 2.3657
 Epoch 0: Test Loss: 2.3657
 Epoch 0: Train Loss: 2.7056
 Epoch 0: Test Loss: 2.7056
+Epoch 0: Train Loss: 0.0000
+Epoch 0: Test Loss: 0.0000

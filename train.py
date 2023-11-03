@@ -31,15 +31,15 @@ LIGHT = True
 WANDB = True
 
 if not LIGHT:
-    PATH_JPGS = "DP_work/rs19_val/jpgs/rs19_val"
-    PATH_MASKS = "DP_work/rs19_val/uint8/rs19_val"  # /rails
-    PATH_MODELS = "DP_work/models"
-    PATH_LOGS = "DP_work/logs"
+    PATH_JPGS = "RailNet_DT/rs19_val/jpgs/rs19_val"
+    PATH_MASKS = "RailNet_DT/rs19_val/uint8/rs19_val"  # /rails
+    PATH_MODELS = "RailNet_DT/models"
+    PATH_LOGS = "RailNet_DT/logs"
 else:
-    PATH_JPGS = "DP_work/rs19_val_light/jpgs/rs19_val"
-    PATH_MASKS = "DP_work/rs19_val_light/uint8/rs19_val"
-    PATH_MODELS = "DP_work/models"
-    PATH_LOGS = "DP_work/logs"
+    PATH_JPGS = "RailNet_DT/rs19_val_light/jpgs/rs19_val"
+    PATH_MASKS = "RailNet_DT/rs19_val_light/uint8/rs19_val"
+    PATH_MODELS = "RailNet_DT/models"
+    PATH_LOGS = "RailNet_DT/logs"
 
 
 def create_model(output_channels=1):

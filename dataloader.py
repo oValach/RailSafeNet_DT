@@ -70,6 +70,14 @@ class CustomDataset(VisionDataset):
                 for cls in ignore_list:
                     mask[mask==cls] = 255
 
+                ignore_set = set(ignore_list)
+                cls_remaining = [num for num in range(0, 22) if num not in ignore_set]
+
+                # renumber the remaining classes 0-number of remaining classes
+                for idx, cls in enumerate(cls_remaining):
+                    mask[mask==cls] = idx
+
+
             #import matplotlib.pyplot as plt
             #mask[mask == 255] = 0
 

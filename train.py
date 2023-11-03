@@ -28,7 +28,7 @@ def wandb_init(num_epochs, lr, batch_size, outputs, optimizer):
     )
 
 LIGHT = True
-WANDB = True
+WANDB = False
 
 if not LIGHT:
     PATH_JPGS = "RailNet_DT/rs19_val/jpgs/rs19_val"
@@ -75,7 +75,7 @@ def train(model, num_epochs, batch_size, optimizer, criterion):
                 model.eval()
 
             # Iterate over data
-            dataset = CustomDataset(PATH_JPGS, PATH_MASKS, seed=False, subset=phase, test_val_fraction=0.1)
+            dataset = CustomDataset(PATH_JPGS, PATH_MASKS, seed=True, subset=phase, test_val_fraction=0.1)
             dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, drop_last=True)
             for inputs, masks in tqdm(dataloader):
 
@@ -111,8 +111,8 @@ def train(model, num_epochs, batch_size, optimizer, criterion):
                 best_model = copy.deepcopy(model.state_dict())
             
             if epoch > 1 and epoch % 10 == 0 and phase == 'Test':
-                torch.save(model, os.path.join(PATH_MODELS, 'modelchp_{}_{}_{}.pth'.format(epochs, lr, outputs)))
-                print('Saving checkpoint for epoch {} as: model_{}_{}_{}.pth'.format(epoch, epochs, lr, outputs))
+                torch.save(model, os.path.join(PATH_MODELS, 'modelchp_{}_{}_{}_{}.pth'.format(epochs, lr, outputs, batch_size)))
+                print('Saving checkpoint for epoch {} as: modelch_{}_{}_{}_{}.pth'.format(epoch, epochs, lr, outputs, batch_size))
 
         if WANDB:
             normalized_results = outputs_c[0].softmax(dim=1).cpu().detach().numpy().squeeze()
@@ -121,19 +121,19 @@ def train(model, num_epochs, batch_size, optimizer, criterion):
             im_classes = []
             for class_id in range(outputs-1):
                 im_classes.append(wandb.Image((outputs_c[0][class_id].cpu()).detach().numpy(), caption="Prediction of a class {}".format(class_id+1)))
-            im_classes.append(wandb.Image((outputs_c[0][21].cpu()).detach().numpy(), caption="Background"))
+            im_classes.append(wandb.Image((outputs_c[0][-1].cpu()).detach().numpy(), caption="Background"))
             id_log = wandb.Image(id_map, caption="Predicted ID map")
 
             mask_log = masks[0].cpu().detach().numpy() + 1
             mask_log[mask_log==256] = 0
-            mask_log = (mask_log / 22)
+            mask_log = (mask_log / outputs)
             mask_log = wandb.Image(mask_log, caption="Input mask")
 
             wandb.log({
                 "train_loss" : train_loss,
                 "test_loss" : test_loss,
-                "Input, predicted mask, background" : [mask_log, id_log, im_classes[21]],
-                "Classes": im_classes[0:20]
+                "Input, predicted mask, background" : [mask_log, id_log, im_classes[-1]],
+                "Classes": im_classes[0:-2]
                 })
 
         print('Epoch {} done with loss: {:4f}'.format(epoch, epoch_loss))
@@ -153,7 +153,7 @@ if __name__ == "__main__":
     epochs = 30
     lr = 0.01
     batch_size = 4
-    outputs = 22
+    outputs = 12
     model = create_model(outputs)
 
     #optimizer = Adadelta(model.parameters(), lr = lr)
@@ -167,8 +167,8 @@ if __name__ == "__main__":
 
     model_final, best_model = train(model, epochs, batch_size, optimizer, loss_function)
 
-    torch.save(model_final, os.path.join(PATH_MODELS, 'model_{}_{}_{}.pth'.format(epochs, lr, outputs)))
-    torch.save(best_model, os.path.join(PATH_MODELS, 'modelb_{}_{}_{}.pth'.format(epochs, lr, outputs)))
-    print('Saved as: model_{}_{}_{}.pth'.format(epochs, lr, outputs))
+    torch.save(model_final, os.path.join(PATH_MODELS, 'model_{}_{}_{}_{}.pth'.format(epochs, lr, outputs, batch_size)))
+    torch.save(best_model, os.path.join(PATH_MODELS, 'modelb_{}_{}_{}_{}.pth'.format(epochs, lr, outputs, batch_size)))
+    print('Saved as: model_{}_{}_{}_{}.pth'.format(epochs, lr, outputs, batch_size))
     if WANDB:
         wandb.finish()

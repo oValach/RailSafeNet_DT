@@ -34,7 +34,7 @@ rs19_label2bgr = {"buffer-stop": (70,70,70),
 
 PATH_jpg = 'RailNet_DT/rs19_val/jpgs/rs19_val/rs00035.jpg'
 PATH_mask = 'RailNet_DT/rs19_val/uint8/rs19_val/rs00035.png'
-PATH_model = 'RailNet_DT/models/modelb_300_0.01_22_16_dj+.pth'
+PATH_model = 'RailNet_DT/models/modelb_300_0.01_22_32_il.pth'
 
 
 with open(PATH_jpg, "rb") as image_file, open(PATH_mask, "rb") as mask_file:

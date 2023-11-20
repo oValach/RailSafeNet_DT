@@ -62,6 +62,7 @@ class CustomDataset(VisionDataset):
             id_map = cv2.imread(mask_file.name, cv2.IMREAD_GRAYSCALE)
             id_map = cv2.resize(id_map, (224, 224), interpolation=cv2.INTER_NEAREST) # keep the initial values after resizing
             mask = torch.tensor(id_map, dtype=torch.float32).long() # pixel value == class id, if 255 == not classified
+            
 
             # ignore not well segmented classes
             ignore = True
@@ -77,19 +78,20 @@ class CustomDataset(VisionDataset):
                 for idx, cls in enumerate(cls_remaining):
                     mask[mask==cls] = idx
 
+                mask[mask==255] = 12
+            
+            ploting = False
+            if ploting:
+                import matplotlib.pyplot as plt
+                mask[mask == 255] = 0
 
-            #import matplotlib.pyplot as plt
-            #mask[mask == 255] = 0
+                plt.figure()
+                plt.subplot(1, 2, 1)
+                plt.imshow(mask, cmap='gray')
 
-            #plt.figure()
-            #plt.subplot(1, 2, 1)
-            #plt.imshow(mask, cmap='gray')
-            #plt.title('Ground truth')
-
-            #plt.subplot(1, 2, 2) 
-            #plt.imshow(image[0], cmap='gray')
-            #plt.title('Output')
-            #plt.show()
+                plt.subplot(1, 2, 2) 
+                plt.imshow(image[0], cmap='gray')
+                plt.show()
 
             sample = [image, mask]
             return sample

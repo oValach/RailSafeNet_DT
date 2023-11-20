@@ -32,23 +32,25 @@ rs19_label2bgr = {"buffer-stop": (70,70,70),
                 "truck" : (70,0,0)
                 }
 
-PATH_jpg = 'RailNet_DT/rs19_val/jpgs/rs19_val/rs00035.jpg'
-PATH_mask = 'RailNet_DT/rs19_val/uint8/rs19_val/rs00035.png'
-PATH_model = 'RailNet_DT/models/modelb_300_0.01_22_16_dj+.pth'
+PATH_jpgs = 'RailNet_DT/rs19_val/jpgs/test'
+PATH_jpg = 'RailNet_DT/rs19_val/jpgs/test/rs07700.jpg'
+PATH_mask = 'RailNet_DT/rs19_val/uint8/test/rs07700.png'
+PATH_masks = 'RailNet_DT/rs19_val/uint8/test'
+PATH_model = 'RailNet_DT/models/model_300_0.02_12_16_ss.pth'
 
-
-with open(PATH_jpg, "rb") as image_file, open(PATH_mask, "rb") as mask_file:
+for filename in os.listdir(PATH_jpgs):
+    im_jpg = cv2.imread(os.path.join(PATH_jpgs, filename))
+    mask_pth = os.path.join(PATH_masks, filename).replace('.jpg', '.png')
+    mask_gr = cv2.imread(mask_pth, cv2.IMREAD_GRAYSCALE)
 
     # LOAD THE IMAGE
-    im_jpg = cv2.imread(image_file.name)
     im_jpg = cv2.resize(im_jpg, (224, 224), interpolation=cv2.INTER_NEAREST)
     image = torch.tensor(im_jpg, dtype=torch.float32)
     image_norm = torch.div(image.permute(2, 0, 1), 254) # input normalization
     image_norm = image_norm.unsqueeze(0)
     
     # LOAD THE MASK
-    id_map = cv2.imread(mask_file.name, cv2.IMREAD_GRAYSCALE)
-    id_map = cv2.resize(id_map, (224, 224), interpolation=cv2.INTER_NEAREST)
+    id_map = cv2.resize(mask_gr, (224, 224), interpolation=cv2.INTER_NEAREST)
     mask = torch.tensor(id_map, dtype=torch.float32).long()
 
     # LOAD THE MODEL
@@ -95,15 +97,17 @@ with open(PATH_jpg, "rb") as image_file, open(PATH_mask, "rb") as mask_file:
     blend_sources = (rgba_blend * 0.1 + rgba_img * 0.9).astype(np.uint8)
 
     # Plot image and final mask
-    plt.figure()
-    plt.subplot(1, 2, 1)
-    plt.imshow(mask, cmap='gray')
-    plt.title('Ground truth')
+    compare = False
+    if compare:
+        plt.figure()
+        plt.subplot(1, 2, 1)
+        plt.imshow(mask, cmap='gray')
+        plt.title('Ground truth')
 
-    plt.subplot(1, 2, 2) 
-    plt.imshow(blend_sources, cmap='gray')
-    plt.title('Output')
-    plt.show()
+        plt.subplot(1, 2, 2) 
+        plt.imshow(blend_sources, cmap='gray')
+        plt.title('Output')
+        plt.show()
 
     # CV2 VIZUALISATION
     image1 = rgba_blend
@@ -151,17 +155,17 @@ with open(PATH_jpg, "rb") as image_file, open(PATH_mask, "rb") as mask_file:
     cv2.destroyAllWindows()
 
 
-#for o in range(21):
-#    plt.figure()
-#    plt.subplot(1, 2, 1)
-#    plt.imshow(mask, cmap='gray')
-#    plt.title('Ground truth')
+    #for o in range(21):
+    #    plt.figure()
+    #    plt.subplot(1, 2, 1)
+    #    plt.imshow(mask, cmap='gray')
+    #    plt.title('Ground truth')
 
-#   plt.subplot(1, 2, 2) 
-#    out = (output[0][o])#<0.5)
-#    plt.imshow(out, cmap='gray')
-#    plt.title('Output {}'.format(o))
-#    plt.show()
+    #   plt.subplot(1, 2, 2) 
+    #    out = (output[0][o])#<0.5)
+    #    plt.imshow(out, cmap='gray')
+    #    plt.title('Output {}'.format(o))
+    #    plt.show()
 
 
 #dataset = CustomDataset(subset = 'Val')

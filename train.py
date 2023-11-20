@@ -153,14 +153,14 @@ if __name__ == "__main__":
     epochs = 30
     lr = 0.01
     batch_size = 4
-    outputs = 12
+    outputs = 13
     model = create_model(outputs)
 
     #optimizer = Adadelta(model.parameters(), lr = lr)
     optimizer = Adam(model.parameters(), lr=lr)
     #optimizer = SGD(model.parameters(), lr = lr)
 
-    loss_function = nn.CrossEntropyLoss(ignore_index=255) # ignore not classified pixels
+    loss_function = nn.CrossEntropyLoss()
 
     if WANDB:
         wandb_init(epochs, lr, batch_size, outputs, str(optimizer.__class__))

@@ -33,13 +33,10 @@ class CustomDataset(VisionDataset):
             np.random.shuffle(indices)
             self.image_list = self.image_list[indices]
             self.mask_list = self.mask_list[indices]
-        if subset == 'Train':  # split dataset to 1-2*fraction of train data, default fraction == 0.1
-            self.image_names = self.image_list[:int(np.ceil(len(self.image_list) * (1 - self.test_val_fraction*2)))]
-            self.mask_names = self.mask_list[:int(np.ceil(len(self.mask_list) * (1 - self.test_val_fraction*2)))]
-        elif subset == 'Test':  # test data of lenght of fraction
-            self.image_names = self.image_list[int(np.ceil(len(self.image_list) * (1 - self.test_val_fraction*2))):int(np.ceil(len(self.image_list) * (1 - self.test_val_fraction)))]
-            self.mask_names = self.mask_list[int(np.ceil(len(self.mask_list) * (1 - self.test_val_fraction*2))):int(np.ceil(len(self.mask_list) * (1 - self.test_val_fraction)))]
-        elif subset == 'Val':  # val data - different part of data than test, also of length fraction
+        if subset == 'Train':  # split dataset to 1-fraction of train data, default fraction == 0.1
+            self.image_names = self.image_list[:int(np.ceil(len(self.image_list) * (1 - self.test_val_fraction)))]
+            self.mask_names = self.mask_list[:int(np.ceil(len(self.mask_list) * (1 - self.test_val_fraction)))]
+        elif subset == 'Valid':  # val data - data of length fraction
             self.image_names = self.image_list[int(np.ceil(len(self.image_list) * (1 - self.test_val_fraction))):]
             self.mask_names = self.mask_list[int(np.ceil(len(self.mask_list) * (1 - self.test_val_fraction))):]
         else:
@@ -78,9 +75,9 @@ class CustomDataset(VisionDataset):
                 for idx, cls in enumerate(cls_remaining):
                     mask[mask==cls] = idx
 
-                mask[mask==255] = 12
+                mask[mask==255] = 12 # background
             
-            ploting = False
+            ploting = True
             if ploting:
                 import matplotlib.pyplot as plt
                 mask[mask == 255] = 0

@@ -55,8 +55,8 @@ def train(model, num_epochs, batch_size, optimizer, criterion):
     best_model = copy.deepcopy(model.state_dict())
     best_loss = 1e10
     loss = 0
-    #device = "cpu"
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = "cpu"
+    #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
     for epoch in range(num_epochs):
@@ -67,7 +67,7 @@ def train(model, num_epochs, batch_size, optimizer, criterion):
         train_loss = 0 # for the wandb logging
         test_loss = 0 # --||--
         outputs_c = None
-        for phase in ['Train', 'Test']:
+        for phase in ['Train', 'Valid']:
 
             if phase == 'Train':
                 model.train()
@@ -106,11 +106,11 @@ def train(model, num_epochs, batch_size, optimizer, criterion):
                 log_file.write('Epoch {}: {} Loss: {:.4f}\n'.format(epoch, phase, epoch_loss))
 
             # save the better model
-            if phase == 'Test' and epoch_loss < best_loss:
+            if phase == 'Valid' and epoch_loss < best_loss:
                 best_loss = epoch_loss
                 best_model = copy.deepcopy(model.state_dict())
             
-            if epoch > 1 and epoch % 10 == 0 and phase == 'Test':
+            if epoch > 1 and epoch % 10 == 0 and phase == 'Valid':
                 torch.save(model, os.path.join(PATH_MODELS, 'modelchp_{}_{}_{}_{}.pth'.format(epochs, lr, outputs, batch_size)))
                 print('Saving checkpoint for epoch {} as: modelch_{}_{}_{}_{}.pth'.format(epoch, epochs, lr, outputs, batch_size))
 

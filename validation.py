@@ -1,44 +1,19 @@
 import numpy as np
+import pandas as pd
 import torch
-import os
-from tqdm import tqdm
-from torch.utils.data import DataLoader
-import torch.nn.functional as F
-from torchvision.transforms.functional import pil_to_tensor
-import matplotlib.pyplot as plt
 import cv2
-
-rs19_label2bgr = {"buffer-stop": (70,70,70),
-                "crossing": (128,64,128),
-                "guard-rail": (0,255,0),
-                "train-car" :  (100,80,0),
-                "platform" : (232,35,244),
-                "rail": (255,255,0),
-                "switch-indicator": (127,255,0),
-                "switch-left": (255,255,0),
-                "switch-right": (127,127,0),
-                "switch-unknown": (191,191,0),
-                "switch-static": (0,255,127),
-                "track-sign-front" : (0,220,220),
-                "track-signal-front" : (30,170,250),
-                "track-signal-back" : (0,85,125),
-                #rail occluders
-                "person-group" : (60,20,220),
-                "car" : (142,0,0),
-                "fence" : (153,153,190),
-                "person" : (60,20,220),
-                "pole" : (153,153,153),
-                "rail-occluder" : (255,255,255),
-                "truck" : (70,0,0)
-                }
+import os
+import torch.nn.functional as F
+from mAP import compute_map_cls
+from rs19_val.example_vis import rs19_label2bgr
 
 PATH_jpgs = 'RailNet_DT/rs19_val/jpgs/test'
 PATH_jpg = 'RailNet_DT/rs19_val/jpgs/test/rs07700.jpg'
 PATH_mask = 'RailNet_DT/rs19_val/uint8/test/rs07700.png'
 PATH_masks = 'RailNet_DT/rs19_val/uint8/test'
-PATH_model = 'RailNet_DT/models/model_300_0.02_12_16_ss.pth'
+PATH_model = 'RailNet_DT/models/model_300_0.01_13_16_wh.pth'
 
-for filename in os.listdir(PATH_jpgs):
+def load(filename):
     im_jpg = cv2.imread(os.path.join(PATH_jpgs, filename))
     mask_pth = os.path.join(PATH_masks, filename).replace('.jpg', '.png')
     mask_gr = cv2.imread(mask_pth, cv2.IMREAD_GRAYSCALE)
@@ -50,23 +25,37 @@ for filename in os.listdir(PATH_jpgs):
     image_norm = image_norm.unsqueeze(0)
     
     # LOAD THE MASK
-    id_map = cv2.resize(mask_gr, (224, 224), interpolation=cv2.INTER_NEAREST)
-    mask = torch.tensor(id_map, dtype=torch.float32).long()
+    id_map_gt = cv2.resize(mask_gr, (224, 224), interpolation=cv2.INTER_NEAREST)
+    mask = torch.tensor(id_map_gt, dtype=torch.float32).long()
 
     # LOAD THE MODEL
     model = torch.load(PATH_model, map_location=torch.device('cpu'))
     model, image_norm = model.cpu(), image_norm.cpu()
     model.eval()
+    
+    return image_norm, image, mask, id_map_gt, model
 
-    # INFERENCE + SOFTMAX
-    output = model(image_norm)['out']
-    confidence_scores = F.softmax(output, dim=1).cpu().detach().numpy().squeeze()
-    #normalized_results = output.softmax(dim=1)
-    id_map = np.argmax(confidence_scores, axis=0).astype(np.uint8)
+def remap_ignored_clss(id_map):
+    ignore_list = [0,1,2,6,8,9,15,16,19,20]
+    for cls in ignore_list:
+        id_map[id_map==cls] = 255
 
+    ignore_set = set(ignore_list)
+    cls_remaining = [num for num in range(0, 22) if num not in ignore_set]
+
+    # renumber the remaining classes 0-number of remaining classes
+    for idx, cls in enumerate(cls_remaining):
+        id_map[id_map==cls] = idx
+
+    id_map[id_map==255] = 12 # background
+    
+    return id_map
+
+def prepare_for_display(mask, image, id_map, rs19_label2bgr):
     # Mask + prediction preparation
     mask = mask + 1
     mask[mask==256] = 0
+    mask = remap_ignored_clss(mask)
     mask = (mask + 100).detach().numpy().astype(np.uint8)
     mask_rgb = cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB)
 
@@ -95,20 +84,10 @@ for filename in os.listdir(PATH_jpgs):
     alpha_channel_blend = np.full((blend_sources.shape[0], blend_sources.shape[1]), 150, dtype=np.uint8)
     rgba_blend = cv2.merge((blend_sources , alpha_channel_blend))
     blend_sources = (rgba_blend * 0.1 + rgba_img * 0.9).astype(np.uint8)
-
-    # Plot image and final mask
-    compare = False
-    if compare:
-        plt.figure()
-        plt.subplot(1, 2, 1)
-        plt.imshow(mask, cmap='gray')
-        plt.title('Ground truth')
-
-        plt.subplot(1, 2, 2) 
-        plt.imshow(blend_sources, cmap='gray')
-        plt.title('Output')
-        plt.show()
-
+    
+    return(rgba_mask, rgba_blend, blend_sources)
+    
+def visualize(rgba_blend, rgba_mask):
     # CV2 VIZUALISATION
     image1 = rgba_blend
     image2 = rgba_mask
@@ -116,8 +95,8 @@ for filename in os.listdir(PATH_jpgs):
     initial_opacity1 = 0.05
     initial_opacity2 = 0.95
 
-    cv2.namedWindow('Segmentation', cv2.WINDOW_NORMAL)
-    cv2.resizeWindow('Segmentation', 224, 224)
+    cv2.namedWindow('{} | mAP:{:.3f} | MmAP:{:.3f} '.format(filename, map, Mmap), cv2.WINDOW_NORMAL)
+    cv2.resizeWindow('{} | mAP:{:.3f} | MmAP:{:.3f} '.format(filename, map, Mmap), 1000, 1000)
 
     while True:
         overlay_image = image1.copy()
@@ -134,7 +113,7 @@ for filename in os.listdir(PATH_jpgs):
 
         blended_image = (image1 * initial_opacity1 + image2 * initial_opacity2).astype(np.uint8)
 
-        cv2.imshow('Segmentation', blended_image)
+        cv2.imshow('{} | mAP:{:.3f} | MmAP:{:.3f} '.format(filename, map, Mmap), blended_image)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
@@ -154,26 +133,49 @@ for filename in os.listdir(PATH_jpgs):
 
     cv2.destroyAllWindows()
 
+mAPs = list()
+MmAPs = list()
+classes_ap = {}
+classes_Map = {}
+counter = 0
+for filename in os.listdir(PATH_jpgs):
+    counter += 1
+    
+    image_norm, image, mask, id_map_gt, model = load(filename)
 
-    #for o in range(21):
-    #    plt.figure()
-    #    plt.subplot(1, 2, 1)
-    #    plt.imshow(mask, cmap='gray')
-    #    plt.title('Ground truth')
+    # INFERENCE + SOFTMAX
+    output = model(image_norm)['out']
+    confidence_scores = F.softmax(output, dim=1).cpu().detach().numpy().squeeze()
+    id_map = np.argmax(confidence_scores, axis=0).astype(np.uint8)
 
-    #   plt.subplot(1, 2, 2) 
-    #    out = (output[0][o])#<0.5)
-    #    plt.imshow(out, cmap='gray')
-    #    plt.title('Output {}'.format(o))
-    #    plt.show()
+    # mAP
+    id_map_gt = remap_ignored_clss(id_map_gt)
+    map, classes_ap  = compute_map_cls(id_map_gt, id_map, classes_ap)
+    Mmap, classes_Map = compute_map_cls(id_map_gt, id_map, classes_Map, major = True)
+    
+    print('{} | mAP:{:.3f} | MmAP:{:.3f} '.format(filename, map, Mmap))
+    mAPs.append(map)
+    MmAPs.append(Mmap)
+    
+    #if counter > 100:
+    #    break
+    
+    vis = False
+    if vis:
+        rgba_mask, rgba_blend, blend_sources = prepare_for_display(mask, image, id_map, rs19_label2bgr)        
+        visualize(rgba_blend, rgba_mask)
 
+mAPs_avg = np.nanmean(mAPs)
+MmAPs_avg = np.nanmean(MmAPs)
+print('All | mAP: {:.3f} | MmAP: {:.3f}'.format(mAPs_avg, MmAPs_avg))
 
-#dataset = CustomDataset(subset = 'Val')
-#dataloader = DataLoader(dataset, batch_size=2, shuffle=False)
-#outputs_test = []
-#i = 1
-#for inputs_test, masks in tqdm(dataloader):
-#    outputs_test = model(inputs_test)
-#    outputs_test = outputs_test['out'].detach().numpy()
-#    np.save(os.path.join('models','output_{}'.format(i)), outputs_test)
-#    i += 1
+for cls, value in classes_ap.items():
+    classes_ap[cls] = value[0] / value[1]
+    
+for cls, value in classes_Map.items():
+    classes_Map[cls] = value[0] / value[1]
+
+df_ap = pd.DataFrame(list(classes_ap.items()), columns=['Class', 'mAP'])
+df_Map = pd.DataFrame(list(classes_Map.items()), columns=['Class', 'MmAP'])
+df_merged = pd.merge(df_ap, df_Map, on='Class', how='outer')
+print(df_merged)

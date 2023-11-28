@@ -2,7 +2,7 @@ import numpy as np
 from sklearn.metrics import average_precision_score, precision_recall_curve
 
 
-def remap_mask(mask1, mask2):
+def remap_mask(mask1, mask2): # not used
     classes_mask1 = np.unique(mask1)
     classes_mask2 = np.unique(mask2)
 
@@ -23,9 +23,11 @@ def remap_mask(mask1, mask2):
     return mask1, mask2
 
 def compute_ap_for_cls(gt_mask, pred_mask, cls_id):
+    # flatten to binary
     gt_flat = (gt_mask.flatten() == cls_id).astype(int)
     pred_flat = (pred_mask.flatten() == cls_id).astype(int)
 
+    #if there is no occurences return 0 for the class
     if np.sum(gt_flat) == 0:
         return 0
     else:
@@ -35,26 +37,28 @@ def compute_ap_for_cls(gt_mask, pred_mask, cls_id):
 def compute_map_cls(gt_mask, pred_mask, classes_ap, major = False):
     classes = np.unique(np.concatenate([gt_mask, pred_mask]))  #class indices start from 0
     
-    if major: # compute mAP just from the major classes in the image
+    if major: # compute mAP just from the major classes in the image (more than 150 pixels in each mask)
         occurrences1 = {num: np.count_nonzero(gt_mask == num) for num in np.unique(gt_mask)}
         occurrences2 = {num: np.count_nonzero(pred_mask == num) for num in np.unique(pred_mask)}
         
         classes = classes[[i for i, key in enumerate(classes) if occurrences1.get(key, 0) > 150 and occurrences2.get(key, 0) > 150]]
-    
+
     # compute the AP for individual classes
     ap_values = []
     dict_ap_values = {}
     for class_index in classes:
         if class_index != 12: # exclude background class 12
             ap = compute_ap_for_cls(gt_mask, pred_mask, class_index)
-            ap_values.append(ap) # save for 
-            dict_ap_values[class_index] = ap
+            ap_values.append(ap) # save for per picture evaluation
+            dict_ap_values[class_index] = ap # save for per class evaluation
 
+    # add the values for the per class evaluation
     for cls, value in dict_ap_values.items():
         if cls not in classes_ap:
             classes_ap[cls] = [value,1]
         else:
-            classes_ap[cls] = np.add(classes_ap[cls], [value,1]) 
+            classes_ap[cls] = np.add(classes_ap[cls], [value,1])
+
     # mAP
     map_score = np.mean(ap_values)
     return map_score, classes_ap

@@ -42,6 +42,7 @@ def compute_map_cls(gt_mask, pred_mask, classes_ap, major = False):
         occurrences2 = {num: np.count_nonzero(pred_mask == num) for num in np.unique(pred_mask)}
         
         classes = classes[[i for i, key in enumerate(classes) if occurrences1.get(key, 0) > 150 and occurrences2.get(key, 0) > 150]]
+        
 
     # compute the AP for individual classes
     ap_values = []

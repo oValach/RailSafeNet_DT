@@ -94,26 +94,39 @@ def visualize(rgba_blend, rgba_mask):
 
     initial_opacity1 = 0.05
     initial_opacity2 = 0.95
+    # Load two smaller images
+    small_image1 = cv2.resize(image1, (500, 500), interpolation=cv2.INTER_NEAREST)
+    small_image2 = cv2.resize(image2, (500, 500), interpolation=cv2.INTER_NEAREST)
+        
+    # Create a blank canvas for the combined visualization
+    combined_image = np.zeros((1000, 1500, 4), dtype=np.uint8)  # Adjust the size as needed
 
+    # Main loop for adjusting opacity and displaying the images
     cv2.namedWindow('{} | mAP:{:.3f} | MmAP:{:.3f} '.format(filename, map, Mmap), cv2.WINDOW_NORMAL)
-    cv2.resizeWindow('{} | mAP:{:.3f} | MmAP:{:.3f} '.format(filename, map, Mmap), 1000, 1000)
+    cv2.resizeWindow('{} | mAP:{:.3f} | MmAP:{:.3f} '.format(filename, map, Mmap), 1400, 1000)  # Adjust the size as needed
 
     while True:
+        
         overlay_image = image1.copy()
         overlay_image[:, :, 3] = (image1[:, :, 3] * initial_opacity1).astype(np.uint8)
 
-        # Blend the modified image with image2 using the specified opacity
         alpha = (image2[:, :, 3] * initial_opacity2).astype(float)
         beta = 1.0 - alpha / 255.0
 
-        # Perform element-wise multiplication with reshaped alpha
         blended_image = np.empty_like(overlay_image)
         blended_image[:, :, :3] = (overlay_image[:, :, :3] * alpha[:, :, np.newaxis] + image2[:, :, :3] * beta[:, :, np.newaxis]).astype(np.uint8)
         blended_image[:, :, 3] = (overlay_image[:, :, 3] * alpha + image2[:, :, 3] * beta).astype(np.uint8)
 
         blended_image = (image1 * initial_opacity1 + image2 * initial_opacity2).astype(np.uint8)
 
-        cv2.imshow('{} | mAP:{:.3f} | MmAP:{:.3f} '.format(filename, map, Mmap), blended_image)
+        blended_image_resized = cv2.resize(blended_image, (1000, 1000))  # Adjust the size as needed
+        combined_image[:, :1000, :] = blended_image_resized
+
+        # Copy the smaller images to the right portion of the canvas
+        combined_image[0:500, 1000:1500, :] = small_image1[:, :, :]
+        combined_image[500:1000, 1000:1500, :] = small_image2[:, :, :]
+
+        cv2.imshow('{} | mAP:{:.3f} | MmAP:{:.3f} '.format(filename, map, Mmap), combined_image)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
@@ -157,17 +170,18 @@ for filename in os.listdir(PATH_jpgs):
     mAPs.append(map)
     MmAPs.append(Mmap)
     
-    #if counter > 100:
-    #    break
+    if counter > 5:
+        break
     
-    vis = False
+    vis = True
     if vis:
         rgba_mask, rgba_blend, blend_sources = prepare_for_display(mask, image, id_map, rs19_label2bgr)        
         visualize(rgba_blend, rgba_mask)
 
 mAPs_avg = np.nanmean(mAPs)
 MmAPs_avg = np.nanmean(MmAPs)
-print('All | mAP: {:.3f} | MmAP: {:.3f}'.format(mAPs_avg, MmAPs_avg))
+print('All         | mAP:{:.3f} | MmAP:{:.3f}'.format(mAPs_avg, MmAPs_avg))
+print('mAP: {:.3f}-{:.3f} | MmAP: {:.3f}-{:.3f}'.format(np.nanmin(mAPs), np.nanmax(mAPs), np.nanmin(MmAPs), np.nanmax(MmAPs)))
 
 for cls, value in classes_ap.items():
     classes_ap[cls] = value[0] / value[1]

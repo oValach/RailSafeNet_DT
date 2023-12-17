@@ -34,16 +34,13 @@ def compute_ap_for_cls(gt_mask, pred_mask, cls_id):
         ap = average_precision_score(gt_flat, pred_flat)
         return ap
 
-def compute_map_cls(gt_mask, pred_mask, classes_ap, major = False):
-    classes = np.unique(np.concatenate([gt_mask, pred_mask]))  #class indices start from 0
+def compute_map_cls(gt_mask, pred_mask, classes_ap, major = False, treshold=150):
     
     if major: # compute mAP just from the major classes in the image (more than 150 pixels in each mask)
-        occurrences1 = {num: np.count_nonzero(gt_mask == num) for num in np.unique(gt_mask)}
-        occurrences2 = {num: np.count_nonzero(pred_mask == num) for num in np.unique(pred_mask)}
+        classes = get_major_classes(gt_mask, pred_mask, treshold)
+    else:
+        classes = np.unique(np.concatenate((np.unique(gt_mask),np.unique(pred_mask))))
         
-        classes = classes[[i for i, key in enumerate(classes) if occurrences1.get(key, 0) > 150 and occurrences2.get(key, 0) > 150]]
-        
-
     # compute the AP for individual classes
     ap_values = []
     dict_ap_values = {}
@@ -63,3 +60,67 @@ def compute_map_cls(gt_mask, pred_mask, classes_ap, major = False):
     # mAP
     map_score = np.mean(ap_values)
     return map_score, classes_ap
+
+def get_major_classes(gt_mask,pred_mask,treshold):
+    classes = np.unique(np.concatenate((np.unique(gt_mask),np.unique(pred_mask))))
+    
+    occurrences1 = {num: np.count_nonzero(gt_mask == num) for num in np.unique(gt_mask)}
+    occurrences2 = {num: np.count_nonzero(pred_mask == num) for num in np.unique(pred_mask)}
+    
+    classes = classes[[i for i, key in enumerate(classes) if occurrences1.get(key, 0) > treshold and occurrences2.get(key, 0) > treshold]]
+    
+    return classes
+
+def compute_IoU(gt_mask, pred_mask, classes_stats, major=False, treshold=150):
+    if major: # compute mAP just from the major classes in the image (more than 150 pixels in each mask)
+        classes = get_major_classes(gt_mask, pred_mask, treshold)
+    else:
+        classes = np.unique(np.concatenate((np.unique(gt_mask),np.unique(pred_mask))))
+    
+    if np.all(classes==12):
+        return(0, 0, 0, 0, classes_stats)
+    
+    stats_image = {}
+    
+    for cls in classes:
+        if cls != 12: # excluding background
+            intersection = np.sum((gt_mask == cls) & (pred_mask == cls))
+            union = np.sum((gt_mask == cls) | (pred_mask == cls))
+            IoU = intersection / union
+            
+            tp = np.sum((gt_mask == cls) & (pred_mask == cls))
+            tn = np.sum((gt_mask != cls) & (pred_mask != cls))
+            fp = np.sum((gt_mask != cls) & (pred_mask == cls))
+            fn = np.sum((gt_mask == cls) & (pred_mask != cls))
+            
+            acc = (tp+tn)/(tp+tn+fp+fn)
+            if tp != 0:
+                precision = tp/(tp+fp)
+                recall = tp/(tp+fn)
+            else:
+                precision = 0
+                recall = 0
+        else:
+            IoU = 0
+            acc = 0
+            precision = 0
+            recall = 0
+
+        stats_image[cls] = [IoU,acc,precision,recall]
+    
+    for cls, value in stats_image.items():
+        if cls not in classes_stats:
+            classes_stats[cls] = [value,1]
+        else:
+            classes_stats[cls][0] = np.add(classes_stats[cls][0], value)
+            classes_stats[cls][1] = np.add(classes_stats[cls][1], 1)
+    
+    stats = list(stats_image.values())
+    stats = np.array(stats).reshape(-1, len(stats[0]))
+
+    IoU_img = np.mean(stats[:,0])
+    acc_img = np.mean(stats[:,1])
+    precision_img = np.mean(stats[:,2])
+    recall_img = np.mean(stats[:,3])
+    
+    return(IoU_img, acc_img, precision_img, recall_img, classes_stats)

@@ -1,19 +1,35 @@
 from pathlib import Path
 from torchvision.datasets.vision import VisionDataset
-from torchvision.transforms.functional import pil_to_tensor, to_tensor
-from PIL import Image
+from albumentations.pytorch import ToTensorV2
+import albumentations as A
 import numpy as np
 import torch
 import cv2
 import re
+import os
 
 
 class CustomDataset(VisionDataset):
-    def __init__(self, image_folder, mask_folder, seed, subset, test_val_fraction=0.1):
+    def __init__(self, image_folder, mask_folder, image_size, subset, val_fraction=0.1):
         self.image_folder = Path(image_folder)
         self.mask_folder = Path(mask_folder)
-        self.test_val_fraction = test_val_fraction
-
+        self.val_fraction = val_fraction
+        
+        # Define data transformations using Albumentations
+        self.transform_img = A.Compose([
+                            #A.HorizontalFlip(p=0.5),
+                            #A.VerticalFlip(p=0.5),
+                            #A.RandomRotate90(),
+                            #A.RGBShift(r_shift_limit=15, g_shift_limit=15, b_shift_limit=15, p=0.5),
+                            #A.RandomBrightnessContrast(p=0.5),
+                            A.Resize(height=image_size[0], width=image_size[1], interpolation=cv2.INTER_NEAREST),
+                            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
+                            ToTensorV2(p=1.0),
+                            ])
+        self.transform_mask = A.Compose([
+                            A.Resize(height=image_size[0], width=image_size[1], interpolation=cv2.INTER_NEAREST),
+                            ToTensorV2(p=1.0),
+                            ])
         # all files
         self.image_list = np.array(sorted(Path(self.image_folder).glob("*")))
         self.mask_list = np.array(sorted(Path(self.mask_folder).glob("*")))
@@ -27,18 +43,17 @@ class CustomDataset(VisionDataset):
 
         self.mask_list = np.array(sorted(self.mask_list, key=lambda path: int(re.findall(r'\d+', path.stem)[0]) if re.findall(r'\d+', path.stem) else 0))
 
-        if seed:  # rng locked data shuffle and split
-            np.random.seed(seed)
-            indices = np.arange(len(self.image_list))
-            np.random.shuffle(indices)
-            self.image_list = self.image_list[indices]
-            self.mask_list = self.mask_list[indices]
+
+        indices = np.arange(len(self.image_list))
+        np.random.shuffle(indices)
+        self.image_list = self.image_list[indices]
+        self.mask_list = self.mask_list[indices]
         if subset == 'Train':  # split dataset to 1-fraction of train data, default fraction == 0.1
-            self.image_names = self.image_list[:int(np.ceil(len(self.image_list) * (1 - self.test_val_fraction)))]
-            self.mask_names = self.mask_list[:int(np.ceil(len(self.mask_list) * (1 - self.test_val_fraction)))]
+            self.image_names = self.image_list[:int(np.ceil(len(self.image_list) * (1 - self.val_fraction)))]
+            self.mask_names = self.mask_list[:int(np.ceil(len(self.mask_list) * (1 - self.val_fraction)))]
         elif subset == 'Valid':  # val data - data of length fraction
-            self.image_names = self.image_list[int(np.ceil(len(self.image_list) * (1 - self.test_val_fraction))):]
-            self.mask_names = self.mask_list[int(np.ceil(len(self.mask_list) * (1 - self.test_val_fraction))):]
+            self.image_names = self.image_list[int(np.ceil(len(self.image_list) * (1 - self.val_fraction))):]
+            self.mask_names = self.mask_list[int(np.ceil(len(self.mask_list) * (1 - self.val_fraction))):]
         else:
             print('Invalid data subset.')
 
@@ -51,15 +66,13 @@ class CustomDataset(VisionDataset):
 
         with open(image_path, "rb") as image_file, open(mask_path, "rb") as mask_file:
 
-            im_jpg = cv2.imread(image_file.name)
-            im_jpg = cv2.resize(im_jpg, (224, 224), interpolation=cv2.INTER_NEAREST)
-            image = torch.tensor(im_jpg, dtype=torch.float32)
-            image = torch.div(image.permute(2, 0, 1), 254) # input normalization
+            image = cv2.imread(image_file.name)
+            transform = self.transform_img
+            image = transform(image=image)['image']
 
-            id_map = cv2.imread(mask_file.name, cv2.IMREAD_GRAYSCALE)
-            id_map = cv2.resize(id_map, (224, 224), interpolation=cv2.INTER_NEAREST) # keep the initial values after resizing
-            mask = torch.tensor(id_map, dtype=torch.float32).long() # pixel value == class id, if 255 == not classified
-            
+            mask = cv2.imread(mask_file.name, cv2.IMREAD_GRAYSCALE)
+            transform = self.transform_mask
+            mask = transform(image=mask)['image']
 
             # ignore not well segmented classes
             ignore = True
@@ -77,7 +90,7 @@ class CustomDataset(VisionDataset):
 
                 mask[mask==255] = 12 # background
             
-            ploting = True
+            ploting = False
             if ploting:
                 import matplotlib.pyplot as plt
                 mask[mask == 255] = 0
@@ -90,5 +103,5 @@ class CustomDataset(VisionDataset):
                 plt.imshow(image[0], cmap='gray')
                 plt.show()
 
-            sample = [image, mask]
+            sample = [image, mask.squeeze().long()]
             return sample

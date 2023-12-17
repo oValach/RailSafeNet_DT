@@ -4,14 +4,15 @@ import torch
 import cv2
 import os
 import torch.nn.functional as F
-from mAP import compute_map_cls
+from mAP import compute_map_cls, compute_IoU, get_major_classes
 from rs19_val.example_vis import rs19_label2bgr
 
 PATH_jpgs = 'RailNet_DT/rs19_val/jpgs/test'
 PATH_jpg = 'RailNet_DT/rs19_val/jpgs/test/rs07700.jpg'
 PATH_mask = 'RailNet_DT/rs19_val/uint8/test/rs07700.png'
 PATH_masks = 'RailNet_DT/rs19_val/uint8/test'
-PATH_model = 'RailNet_DT/models/model_300_0.01_13_16_wh.pth'
+PATH_model = 'RailNet_DT/models/modelchp_105_300_0.001_32_[0.10826249 0.84361975 0.20432365 0.32408659].pth'
+#model_300_0.001_13_16_dd_adamw.pth, model_300_0.005_13_32_fp_adamw.pth, model_300_0.01_13_16_wh.pth
 
 def load(filename):
     im_jpg = cv2.imread(os.path.join(PATH_jpgs, filename))
@@ -146,11 +147,12 @@ def visualize(rgba_blend, rgba_mask):
 
     cv2.destroyAllWindows()
 
-mAPs = list()
-MmAPs = list()
-classes_ap = {}
-classes_Map = {}
+mAPs,MmAPs,IoUs,MIoUs,accs,Maccs,precs,Mprecs,recs,Mrecs= list(),list(),list(),list(),list(),list(),list(),list(),list(),list()
+classes_ap,classes_Map,classes_stats,classes_Mstats = {},{},{},{}
 counter = 0
+
+#print(os.getcwd())
+
 for filename in os.listdir(PATH_jpgs):
     counter += 1
     
@@ -163,12 +165,22 @@ for filename in os.listdir(PATH_jpgs):
 
     # mAP
     id_map_gt = remap_ignored_clss(id_map_gt)
-    map, classes_ap  = compute_map_cls(id_map_gt, id_map, classes_ap)
-    Mmap, classes_Map = compute_map_cls(id_map_gt, id_map, classes_Map, major = True)
+    map,classes_ap  = compute_map_cls(id_map_gt, id_map, classes_ap)
+    Mmap,classes_Map = compute_map_cls(id_map_gt, id_map, classes_Map, major = True)
+    IoU,acc,prec,rec,classes_stats = compute_IoU(id_map_gt, id_map, classes_stats)
+    MIoU,Macc,Mprec,Mrec,classes_Mstats = compute_IoU(id_map_gt, id_map, classes_Mstats, major=True)
     
-    print('{} | mAP:{:.3f} | MmAP:{:.3f} '.format(filename, map, Mmap))
+    print('{} | mAP:{:.3f}/{:.3f} | IoU:{:.3f}/{:.3f} | prec:{:.3f}/{:.3f} | rec:{:.3f}/{:.3f} | acc:{:.3f}/{:.3f}'.format(filename,map,Mmap,IoU,MIoU,prec,Mprec,rec,Mrec,acc,Macc))
     mAPs.append(map)
     MmAPs.append(Mmap)
+    IoUs.append(IoU)
+    MIoUs.append(MIoU)
+    accs.append(acc)
+    Maccs.append(Macc)
+    precs.append(prec)
+    Mprecs.append(Mprec)
+    recs.append(rec)
+    Mrecs.append(Mrec)
     
     if counter > 5:
         break
@@ -178,18 +190,44 @@ for filename in os.listdir(PATH_jpgs):
         rgba_mask, rgba_blend, blend_sources = prepare_for_display(mask, image, id_map, rs19_label2bgr)        
         visualize(rgba_blend, rgba_mask)
 
-mAPs_avg = np.nanmean(mAPs)
-MmAPs_avg = np.nanmean(MmAPs)
-print('All         | mAP:{:.3f} | MmAP:{:.3f}'.format(mAPs_avg, MmAPs_avg))
-print('mAP: {:.3f}-{:.3f} | MmAP: {:.3f}-{:.3f}'.format(np.nanmin(mAPs), np.nanmax(mAPs), np.nanmin(MmAPs), np.nanmax(MmAPs)))
+mAPs_avg, MmAPs_avg = np.nanmean(mAPs), np.nanmean(MmAPs)
+IoUs_avg, MIoUs_avg = np.nanmean(IoU), np.nanmean(MIoU)
+accs_avg, Maccs_avg = np.nanmean(accs), np.nanmean(Maccs)
+precs_avg, Mprecs_avg = np.nanmean(precs), np.nanmean(Mprecs)
+recs_avg, Mrecs_avg = np.nanmean(recs), np.nanmean(Mrecs)
+
+print('All         | mAP:{:.3f}/{:.3f} | IoU:{:.3f}/{:.3f} | prec:{:.3f}/{:.3f} | rec:{:.3f}/{:.3f} | acc:{:.3f}/{:.3f}'.format(mAPs_avg,MmAPs_avg,IoUs_avg,MIoUs_avg,precs_avg,Mprecs_avg,recs_avg,Mrecs_avg,accs_avg,Maccs_avg))
+print('mAP: {:.3f}-{:.3f} | MmAP: {:.3f}-{:.3f} | IoU: {:.3f}-{:.3f} | MIoU: {:.3f}-{:.3f}'.format(np.nanmin(mAPs), np.nanmax(mAPs), np.nanmin(MmAPs), np.nanmax(MmAPs),np.nanmin(IoUs), np.nanmax(IoUs), np.nanmin(MIoUs), np.nanmax(MIoUs)))
 
 for cls, value in classes_ap.items():
-    classes_ap[cls] = value[0] / value[1]
-    
+    classes_ap[cls] = np.divide(value[0], value[1])
+classes_ap['all']= np.mean(np.array(list(classes_ap.values())), axis=0)
+
 for cls, value in classes_Map.items():
-    classes_Map[cls] = value[0] / value[1]
+    classes_Map[cls] = np.divide(value[0], value[1])
+classes_Map['all']= np.mean(np.array(list(classes_Map.values())), axis=0)
+
+for cls, value in classes_stats.items():
+    classes_stats[cls] = np.divide(value[0], value[1])
+classes_stats['all']= np.mean(np.array(list(classes_stats.values()))[:, :4], axis=0)
+
+for cls, value in classes_Mstats.items():
+    classes_Mstats[cls] = np.divide(value[0], value[1])
+classes_Mstats['all']= np.mean(np.array(list(classes_Mstats.values()))[:, :4], axis=0)
+
+for cls, value in classes_Mstats.items():
+    classes_stats[cls] = np.insert(classes_stats[cls], 1, value[0])
+    classes_stats[cls] = np.insert(classes_stats[cls], 3, value[1])
+    classes_stats[cls] = np.insert(classes_stats[cls], 5, value[2])
+    classes_stats[cls] = np.insert(classes_stats[cls], 7, value[3])
 
 df_ap = pd.DataFrame(list(classes_ap.items()), columns=['Class', 'mAP'])
 df_Map = pd.DataFrame(list(classes_Map.items()), columns=['Class', 'MmAP'])
+
+classes_stats_flat = [(key, *value) for key, value in classes_stats.items()]
+df_stats = pd.DataFrame(classes_stats_flat, columns=['Class','IoU','MIoU', 'acc','Macc', 'precision','Mprecision','recall','Mrecall'])
+
 df_merged = pd.merge(df_ap, df_Map, on='Class', how='outer')
+df_merged = pd.merge(df_merged, df_stats, on='Class', how='outer')
+
 print(df_merged)

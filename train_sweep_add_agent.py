@@ -26,7 +26,7 @@ sweep_config = {
         },
         'learning_rate': {
             'distribution': 'uniform',
-            'min': 0.00001,
+            'min': 0.0001,
             'max': 0.01
         },
         'optimizer': {

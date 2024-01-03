@@ -183,13 +183,13 @@ def train(model, num_epochs, batch_size, image_size, optimizer, criterion, sched
         # Save model checkpoint every X epochs
         if epoch > 1 and epoch % 10 == 0 and phase == 'Valid':
             torch.save(model, os.path.join(PATH_MODELS,'modelchp_{}_{}_{:3f}.pth'.format(wandb.run.name, epoch, classes_MIoU_all[0])))
-            print('Saving checkpoint for epoch {} as: modelchp_{}_{}_{:3f}.pth'.format(wandb.run.name, epoch, classes_MIoU_all[0]))
+            print('Saving checkpoint as: modelchp_{}_{}_{:3f}.pth'.format(wandb.run.name, epoch, classes_MIoU_all[0]))
 
         # Save the best model based on validation loss
         if phase == 'Valid' and (val_loss/dl_lenval) < best_loss:
             best_loss = (val_loss/dl_lenval)
             best_model = copy.deepcopy(model.state_dict())
-            print('Saving model for epoch {} as the best so far: modelb_{}_{}_{:3f}.pth'.format(wandb.run.name, epoch, classes_MIoU_all[0]))
+            print('Saving model as the best so far: modelb_{}_{}_{:3f}.pth'.format(wandb.run.name, epoch, classes_MIoU_all[0]))
             
         if WANDB:
             normalized_results = outputs[0].softmax(dim=0).cpu().detach().numpy().squeeze()
@@ -243,7 +243,7 @@ sweep_config = {
             'max': 0.01
         },
         'optimizer': {
-            'value': 'adagrad' # Different optimizers to sweep over
+            'values': ['adam', 'sgd', 'adagrad']  # Different optimizers to sweep over
         },
         'scheduler': {
             'values': ['ReduceLROnPlateau', 'LinearLR']  # Different schedulers to sweep over
@@ -251,8 +251,8 @@ sweep_config = {
         'batch_size': {
             'distribution': 'q_log_uniform_values',
             'q': 8,
-            'min': 4,
-            'max': 8
+            'min': 8,
+            'max': 32
         },
         'image_size': {
             'value': 550  # Fixed image size

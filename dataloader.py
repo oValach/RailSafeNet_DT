@@ -16,18 +16,27 @@ class CustomDataset(VisionDataset):
         self.val_fraction = val_fraction
         
         # Define data transformations using Albumentations
-        self.transform_img = A.Compose([
-                            #A.HorizontalFlip(p=0.5),
-                            #A.VerticalFlip(p=0.5),
-                            #A.RandomRotate90(),
-                            #A.RGBShift(r_shift_limit=15, g_shift_limit=15, b_shift_limit=15, p=0.5),
-                            #A.RandomBrightnessContrast(p=0.5),
+        if subset == 'Train': 
+            self.transform_base = A.Compose([
                             A.Resize(height=image_size[0], width=image_size[1], interpolation=cv2.INTER_NEAREST),
+                            A.HorizontalFlip(p=0.5),
+                            A.RandomBrightnessContrast(p=0.3),
+                            A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2, p=0.3),
+                            A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.1, rotate_limit=15, p=0.5),
+                            A.RandomResizedCrop(height=image_size[0], width=image_size[1], scale=(0.8, 1.0)),
+                            A.CoarseDropout(max_holes=8, max_height=8, max_width=8, min_holes=2, fill_value=0, p=0.5),
+                            A.GaussianBlur(blur_limit=(3, 7), p=0.2),
+                            ])
+        elif subset == 'Valid':
+            self.transform_base = A.Compose([
+                            A.Resize(height=image_size[0], width=image_size[1], interpolation=cv2.INTER_NEAREST),
+                            ])
+        
+        self.transform_img = A.Compose([
                             A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
                             ToTensorV2(p=1.0),
                             ])
         self.transform_mask = A.Compose([
-                            A.Resize(height=image_size[0], width=image_size[1], interpolation=cv2.INTER_NEAREST),
                             ToTensorV2(p=1.0),
                             ])
         # all files
@@ -43,11 +52,6 @@ class CustomDataset(VisionDataset):
 
         self.mask_list = np.array(sorted(self.mask_list, key=lambda path: int(re.findall(r'\d+', path.stem)[0]) if re.findall(r'\d+', path.stem) else 0))
 
-
-        indices = np.arange(len(self.image_list))
-        np.random.shuffle(indices)
-        self.image_list = self.image_list[indices]
-        self.mask_list = self.mask_list[indices]
         if subset == 'Train':  # split dataset to 1-fraction of train data, default fraction == 0.1
             self.image_names = self.image_list[:int(np.ceil(len(self.image_list) * (1 - self.val_fraction)))]
             self.mask_names = self.mask_list[:int(np.ceil(len(self.mask_list) * (1 - self.val_fraction)))]
@@ -67,12 +71,14 @@ class CustomDataset(VisionDataset):
         with open(image_path, "rb") as image_file, open(mask_path, "rb") as mask_file:
 
             image = cv2.imread(image_file.name)
-            transform = self.transform_img
-            image = transform(image=image)['image']
-
             mask = cv2.imread(mask_file.name, cv2.IMREAD_GRAYSCALE)
-            transform = self.transform_mask
-            mask = transform(image=mask)['image']
+        
+            transformed = self.transform_base(image=image, mask=mask)
+            transformed_image = transformed['image']
+            transformed_mask = transformed['mask']
+            
+            image = self.transform_img(image=transformed_image)['image']
+            mask = self.transform_mask(image=transformed_mask)['image']
 
             # ignore not well segmented classes
             ignore = True
@@ -97,7 +103,7 @@ class CustomDataset(VisionDataset):
 
                 plt.figure()
                 plt.subplot(1, 2, 1)
-                plt.imshow(mask, cmap='gray')
+                plt.imshow(mask.squeeze(), cmap='gray')
 
                 plt.subplot(1, 2, 2) 
                 plt.imshow(image[0], cmap='gray')

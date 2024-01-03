@@ -1,4 +1,6 @@
 import numpy as np
+import cv2
+import math
 from sklearn.metrics import average_precision_score, precision_recall_curve
 
 
@@ -40,7 +42,11 @@ def compute_map_cls(gt_mask, pred_mask, classes_ap, major = False, treshold=150)
         classes = get_major_classes(gt_mask, pred_mask, treshold)
     else:
         classes = np.unique(np.concatenate((np.unique(gt_mask),np.unique(pred_mask))))
-        
+        classes = classes[np.isin(classes, np.unique(gt_mask)) & np.isin(classes, np.unique(pred_mask))]
+    
+    if np.all(classes==12):
+        return 0, classes_ap
+    
     # compute the AP for individual classes
     ap_values = []
     dict_ap_values = {}
@@ -57,9 +63,8 @@ def compute_map_cls(gt_mask, pred_mask, classes_ap, major = False, treshold=150)
         else:
             classes_ap[cls] = np.add(classes_ap[cls], [value,1])
 
-    # mAP
-    map_score = np.mean(ap_values)
-    return map_score, classes_ap
+    return np.mean(ap_values), classes_ap
+
 
 def get_major_classes(gt_mask,pred_mask,treshold):
     classes = np.unique(np.concatenate((np.unique(gt_mask),np.unique(pred_mask))))
@@ -71,12 +76,13 @@ def get_major_classes(gt_mask,pred_mask,treshold):
     
     return classes
 
-def compute_IoU(gt_mask, pred_mask, classes_stats, major=False, treshold=150):
-    if major: # compute mAP just from the major classes in the image (more than 150 pixels in each mask)
+def compute_IoU(gt_mask, pred_mask, classes_stats, major=False, treshold=144):
+    if major: # compute mAP just from the major classes in the image (more than 144 pixels in each mask)
         classes = get_major_classes(gt_mask, pred_mask, treshold)
     else:
         classes = np.unique(np.concatenate((np.unique(gt_mask),np.unique(pred_mask))))
-    
+        classes = classes[np.isin(classes, np.unique(gt_mask)) & np.isin(classes, np.unique(pred_mask))]
+
     if np.all(classes==12):
         return(0, 0, 0, 0, classes_stats)
     
@@ -84,6 +90,7 @@ def compute_IoU(gt_mask, pred_mask, classes_stats, major=False, treshold=150):
     
     for cls in classes:
         if cls != 12: # excluding background
+            
             intersection = np.sum((gt_mask == cls) & (pred_mask == cls))
             union = np.sum((gt_mask == cls) | (pred_mask == cls))
             IoU = intersection / union
@@ -100,13 +107,8 @@ def compute_IoU(gt_mask, pred_mask, classes_stats, major=False, treshold=150):
             else:
                 precision = 0
                 recall = 0
-        else:
-            IoU = 0
-            acc = 0
-            precision = 0
-            recall = 0
-
-        stats_image[cls] = [IoU,acc,precision,recall]
+                
+            stats_image[cls] = [IoU,acc,precision,recall]
     
     for cls, value in stats_image.items():
         if cls not in classes_stats:

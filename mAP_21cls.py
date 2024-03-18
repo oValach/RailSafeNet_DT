@@ -56,14 +56,14 @@ def compute_map_cls(gt_mask, pred_mask, classes_ap, major = False, treshold=150)
         classes = np.unique(np.concatenate((np.unique(gt_mask),np.unique(pred_mask))))
         classes = classes[np.isin(classes, np.unique(gt_mask)) & np.isin(classes, np.unique(pred_mask))]
     
-    if np.all(classes==12):
+    if np.all(classes==21):
         return 0, classes_ap
     
     # compute the AP for individual classes
     ap_values = []
     dict_ap_values = {}
     for class_index in classes:
-        if class_index != 12: # exclude background class 12
+        if class_index != 21: # exclude background class 21
             ap = compute_ap_for_cls(gt_mask, pred_mask, class_index)
             ap_values.append(ap) # save for per picture evaluation
             dict_ap_values[class_index] = ap # save for per class evaluation
@@ -95,13 +95,13 @@ def compute_IoU(gt_mask, pred_mask, classes_stats, major=False, treshold=144):
         classes = np.unique(np.concatenate((np.unique(gt_mask),np.unique(pred_mask))))
         classes = classes[np.isin(classes, np.unique(gt_mask)) & np.isin(classes, np.unique(pred_mask))]
 
-    if np.all(classes==12):
+    if np.all(classes==21):
         return(0, 0, 0, 0, classes_stats)
     
     stats_image = {}
     
     for cls in classes:
-        if cls != 12: # excluding background
+        if cls != 21: # excluding background
             
             intersection = np.sum((gt_mask == cls) & (pred_mask == cls))
             union = np.sum((gt_mask == cls) | (pred_mask == cls))

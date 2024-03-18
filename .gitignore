@@ -2,6 +2,7 @@
 /geckodriver.log
 /__pycache__
 rs19_val/
+railway_dataset/
 wandb/
 .env
 .venv

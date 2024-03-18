@@ -2,7 +2,6 @@ import os, glob
 import numpy as np
 import json
 import random
-from ProgressBar import printProgressBar
 import matplotlib.pyplot as plt
 
 def files_in_subdirs(start_dir, pattern = ["*.png","*.jpg","*.jpeg"]):

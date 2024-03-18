@@ -7,14 +7,14 @@ import torch.nn as nn
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import torch.nn.functional as F
-from mAP import compute_map_cls, compute_IoU, image_morpho
+from mAP_21cls import compute_map_cls, compute_IoU, image_morpho
 from rs19_val.example_vis import rs19_label2bgr
 
 PATH_jpgs = 'RailNet_DT/rs19_val/jpgs/test'
 PATH_jpg = 'RailNet_DT/rs19_val/jpgs/test/rs07700.jpg'
 PATH_mask = 'RailNet_DT/rs19_val/uint8/test/rs07700.png'
 PATH_masks = 'RailNet_DT/rs19_val/uint8/test'
-PATH_model = 'RailNet_DT/models/modelchp_comic-sweep-7_60_0.621077.pth'
+PATH_model = 'RailNet_DT/models/modelchp_leafy-sweep-5_30_0.586161.pth'
 #model_300_0.001_13_16_dd_adamw.pth, model_300_0.005_13_32_fp_adamw.pth, model_300_0.01_13_16_wh.pth
 #modelchp_170_300_0.001_32_0.671144_aug.pth!, modelchp_105_200_0.001_32_0.725929_rf.pth, modelchp_185_200_0.001_32_0.788379_robustfire_noaug_480x480.pth
 
@@ -56,27 +56,10 @@ def load(filename, input_size=[224,224]):
     
     return image_tr, image_vis, mask, mask_id_map, model
 
-def remap_ignored_clss(id_map):
-    ignore_list = [0,1,2,6,8,9,15,16,19,20]
-    for cls in ignore_list:
-        id_map[id_map==cls] = 255
-
-    ignore_set = set(ignore_list)
-    cls_remaining = [num for num in range(0, 22) if num not in ignore_set]
-
-    # renumber the remaining classes 0-number of remaining classes
-    for idx, cls in enumerate(cls_remaining):
-        id_map[id_map==cls] = idx
-
-    id_map[id_map==255] = 12 # background
-    
-    return id_map
-
 def prepare_for_display(mask, image, id_map, rs19_label2bgr, image_size = [224,224]):
     # Mask + prediction preparation
     mask = mask + 1
     mask[mask==256] = 0
-    mask = remap_ignored_clss(mask)
     mask = (mask + 100).detach().numpy().squeeze().astype(np.uint8)
     mask_rgb = cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB)
 
@@ -202,7 +185,7 @@ if __name__ == "__main__":
     for filename in os.listdir(PATH_jpgs):
         images_computed += 1
         
-        image_size = [512,512]
+        image_size = [1024,1024]
         vis = True
         
         #if images_computed > 50:
@@ -231,7 +214,6 @@ if __name__ == "__main__":
         
         
         # mAP
-        id_map_gt = remap_ignored_clss(id_map_gt)
         map,classes_ap  = compute_map_cls(id_map_gt, id_map, classes_ap)
         Mmap,classes_Map = compute_map_cls(id_map_gt, id_map, classes_Map, major = True)
         IoU,acc,prec,rec,classes_stats = compute_IoU(id_map_gt, id_map, classes_stats)

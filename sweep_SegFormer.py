@@ -1,18 +1,19 @@
-from dataloader import CustomDataset
+from dataloader_SegFormer import CustomDataset
 from mAP import compute_map_cls, compute_IoU
 from torchvision.models.segmentation.deeplabv3 import DeepLabHead
+from transformers import SegformerModel, SegformerConfig, SegformerForSemanticSegmentation, SegformerImageProcessor
 from torchvision import models
-from torch.optim import SGD, Adam, Adagrad
+from torch.optim import SGD, Adam, Adagrad, AdamW
 from torch.utils.data import DataLoader
 import torch.optim.lr_scheduler as lr_scheduler
 import torch.nn.functional as F
 from torchsummary import summary
-import torch.nn as nn
 import albumentations as A
+import torch.nn as nn
+import cv2
 import torch
 import numpy as np
 import os
-import cv2
 import wandb
 from tqdm import tqdm
 import time
@@ -30,8 +31,9 @@ def get_image_4_wandb(path, input_size = [224,224]):
     image = image.cpu()
     
     return image
+    
 
-def wandb_init(num_epochs, lr, batch_size, outputs, optimizer, scheduler):
+def wandb_init(num_epochs, lr, batch_size, outputs, optimizer, scheduler, model):
     wandb.init(
         project="DP_train_full",
         # name=f"experiment_{run}",
@@ -42,11 +44,12 @@ def wandb_init(num_epochs, lr, batch_size, outputs, optimizer, scheduler):
             "outputs": outputs,
             "optimizer": optimizer,
             "scheduler": scheduler,
+            "model": model,
         }
     )
 
-LIGHT = True
-WANDB = False
+LIGHT = False
+WANDB = True
 
 if not LIGHT:
     PATH_JPGS = "RailNet_DT/rs19_val/jpgs/rs19_val"
@@ -60,9 +63,10 @@ PATH_LOGS = "RailNet_DT/logs"
 
 
 def create_model(output_channels=1):
-    model = models.segmentation.deeplabv3_resnet50(weight=True, progress=True)
-
-    model.classifier = DeepLabHead(2048, output_channels)
+    model = SegformerForSemanticSegmentation.from_pretrained("nvidia/segformer-b0-finetuned-cityscapes-1024-1024",
+                                                            num_labels=output_channels,
+                                                            ignore_mismatched_sizes=True)
+    
     model.train()
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -79,7 +83,7 @@ def load_model(model_path):
     
     return model
 
-def train(model, num_epochs, batch_size, image_size, optimizer, criterion):
+def train(model, num_epochs, batch_size, image_size, optimizer, criterion, scheduler, config):
     start = time.time()
     best_model = copy.deepcopy(model.state_dict())
     best_loss = 1e10
@@ -100,8 +104,9 @@ def train(model, num_epochs, batch_size, image_size, optimizer, criterion):
         dl_lenval = 0
         
         for phase in ['Train', 'Valid']:
-
-            dataset = CustomDataset(PATH_JPGS, PATH_MASKS, image_size, subset=phase, val_fraction=0.5)
+            
+            image_processor = SegformerImageProcessor(reduce_labels=False)
+            dataset = CustomDataset(PATH_JPGS, PATH_MASKS, image_processor, image_size, subset=phase, val_fraction=0.5)
             dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
             
             if phase == 'Train':
@@ -114,10 +119,19 @@ def train(model, num_epochs, batch_size, image_size, optimizer, criterion):
                     
                     # zero the parameter gradients
                     optimizer.zero_grad()
-
+                    
                     outputs = model(inputs)
-                    outputs = outputs['out']
-                    loss = criterion(torch.squeeze(outputs), masks)
+                    logits = outputs.logits
+                    
+                    upsampled_logits = nn.functional.interpolate(
+                        logits,
+                        size=masks.shape[-2:],
+                        mode="bilinear",
+                        align_corners=False
+                    )
+
+                    upsampled_logits  = upsampled_logits.float()
+                    loss = criterion(upsampled_logits, masks)
 
                     loss.backward()  # gradients
                     optimizer.step()  # update parameters
@@ -132,11 +146,21 @@ def train(model, num_epochs, batch_size, image_size, optimizer, criterion):
                         inputs = inputs.to(device)
                         masks = masks.to(device)
 
-                        outputs = model(inputs)['out']
-                        loss = criterion(torch.squeeze(outputs), masks)
+                        outputs = model(inputs)
+                        logits = outputs.logits
+                        
+                        upsampled_logits = nn.functional.interpolate(
+                            logits,
+                            size=masks.shape[-2:],
+                            mode="bilinear",
+                            align_corners=False
+                        )
+
+                        upsampled_logits  = upsampled_logits.float()
+                        loss = criterion(upsampled_logits, masks)
 
                         val_loss += loss
-                        predicted_masks = outputs
+                        predicted_masks = upsampled_logits
                         gt_masks = masks.cpu().detach().numpy().squeeze()
                         for prediction, gt in zip(predicted_masks, gt_masks):
                             prediction = F.softmax(prediction, dim=0).cpu().detach().numpy().squeeze()
@@ -166,46 +190,46 @@ def train(model, num_epochs, batch_size, image_size, optimizer, criterion):
         for cls, value in classes_MIoU.items():
             classes_MIoU[cls] = np.divide(value[0], value[1])
         classes_MIoU_all= np.mean(np.array(list(classes_MIoU.values()))[:, :4], axis=0)
-
-        # LROnPlateau
-        # scheduler.step(classes_MIoU_all[0])
-        # current_lr = scheduler._last_lr[0]
-        # linearLRdecay
-        if epoch > 200:
-            scheduler.step()
-        current_lr = scheduler.get_last_lr()[0]
-
+        
+        if config.scheduler == 'LinearLR':
+            if epoch > 50:
+                scheduler.step()
+            current_lr = scheduler.get_last_lr()[0]
+        elif config.scheduler == 'ReduceLROnPlateau':
+            scheduler.step(classes_MIoU_all[0])
+            current_lr = scheduler._last_lr[0]
+        
         # Print epoch summary
         print('Epoch {}/{}: Train loss: {:.4f} | Val loss: {:.4f} | lr: {:.4f} | mAP: {:.4f} | MmAP: {:.4f} | IoU: {:.4f} | MIoU: {:.4f}'.format(epoch + 1,num_epochs,train_loss/dl_lentrain,val_loss/dl_lenval,current_lr,classes_mAP_all,classes_MmAP_all,classes_IoU_all[0],classes_MIoU_all[0]))
         
-        with open(os.path.join(PATH_LOGS, 'log_{}_{}.txt'.format(num_epochs, lr)), 'a') as log_file:
+        with open(os.path.join(PATH_LOGS, 'log_{}_{}.txt'.format(num_epochs, config.learning_rate)), 'a') as log_file:
             log_file.write('Epoch {}/{}: Train loss: {:.4f} | Val loss: {:.4f} | lr: {:.4f} | mAP: {:.4f} | MmAP: {:.4f} | IoU: {:.4f} | MIoU: {:.4f}'.format(epoch + 1,num_epochs,train_loss/dl_lentrain,val_loss/dl_lenval,current_lr,classes_mAP_all,classes_MmAP_all,classes_IoU_all[0],classes_MIoU_all[0]))
 
-        # Save model checkpoint every 5 epochs
-        if epoch > 1 and epoch % 5 == 0 and phase == 'Valid':
-            torch.save(model, os.path.join(PATH_MODELS,'modelchp_{}_{}_{}_{}_{:3f}.pth'.format(epoch, epochs, lr, batch_size,classes_MIoU_all[0])))
-            print('Saving checkpoint for epoch {} as: modelchp_{}_{}_{}_{}_{:3f}.pth'.format(epoch, epoch, epochs, lr, batch_size,classes_MIoU_all[0]))
+        # Save model checkpoint every X epochs
+        if epoch > 1 and epoch % 10 == 0 and phase == 'Valid':
+            torch.save(model, os.path.join(PATH_MODELS,'modelchp_{}_{}_{:3f}.pth'.format(wandb.run.name, epoch, classes_MIoU_all[0])))
+            print('Saving checkpoint as: modelchp_{}_{}_{:3f}.pth'.format(wandb.run.name, epoch, classes_MIoU_all[0]))
 
         # Save the best model based on validation loss
         if phase == 'Valid' and (val_loss/dl_lenval) < best_loss:
             best_loss = (val_loss/dl_lenval)
             best_model = copy.deepcopy(model.state_dict())
-            print('Saving model for epoch {} as the best so far: modelb_{}_{}_{}_{}_{:3f}.pth'.format(epoch, epoch, epochs, lr, batch_size,classes_MIoU_all[0]))
+            print('Saving model as the best so far: modelb_{}_{}_{:3f}.pth'.format(wandb.run.name, epoch, classes_MIoU_all[0]))
             
         if WANDB:
-            normalized_results = outputs[0].softmax(dim=0).cpu().detach().numpy().squeeze()
+            normalized_results = upsampled_logits[0].softmax(dim=0).cpu().detach().numpy().squeeze()
             id_map = np.argmax(normalized_results, axis=0).astype(np.uint8)
             id_map = np.divide(id_map,np.max(id_map))
 
             im_classes = []
-            for class_id in range(outs-1):
-                im_classes.append(wandb.Image((outputs[0][class_id].cpu()).detach().numpy(), caption="Prediction of a class {}".format(class_id+1)))
-            im_classes.append(wandb.Image((outputs[0][-1].cpu()).detach().numpy(), caption="Background"))
+            for class_id in range(config.outs-1):
+                im_classes.append(wandb.Image((upsampled_logits[0][class_id].cpu()).detach().numpy(), caption="Prediction of a class {}".format(class_id+1)))
+            im_classes.append(wandb.Image((upsampled_logits[0][-1].cpu()).detach().numpy(), caption="Background"))
             id_log = wandb.Image(id_map, caption="Predicted ID map")
 
             mask_log = masks[0].cpu().detach().numpy() + 1
             mask_log[mask_log==256] = 0
-            mask_log = (mask_log / outs)
+            mask_log = (mask_log / config.outs)
             mask_log = wandb.Image(mask_log, caption="Input mask")
 
             wandb.log({
@@ -228,32 +252,70 @@ def train(model, num_epochs, batch_size, image_size, optimizer, criterion):
     model.load_state_dict(best_model)
     return final_model, model
 
+sweep_config = {
+    'method': 'random',  # 'bayes', 'grid'
+    'metric': {
+        'name': 'MIoU',
+        'goal': 'maximize'
+    },
+    'parameters': {
+        'epochs': {
+            'value': 50
+        },
+        'learning_rate': {
+            'distribution': 'uniform',
+            'min': 0.00001,
+            'max': 0.002
+        },
+        'optimizer': {
+            'values': ['adam', 'adagrad']  # Different optimizers to sweep over
+        },
+        'scheduler': {
+            'values': ['ReduceLROnPlateau', 'LinearLR']  # Different schedulers to sweep over
+        },
+        'batch_size': {
+            'distribution': 'q_log_uniform_values',
+            'q': 4,
+            'min': 4,
+            'max': 32
+        },
+        'image_size': {
+            'value': 1024  # Fixed image size
+        },
+        'outs': {
+            'value': 13  # Fixed number of outputs
+        }
+    }
+}
+
+def sweep_train():
+    with wandb.init() as run:
+        config = wandb.config
+        
+        model = create_model(config.outs)
+        
+        # Define optimizer
+        if config.optimizer == 'adam':
+            optimizer = Adam(model.parameters(), lr=config.learning_rate)
+        elif config.optimizer == 'adagrad':
+            optimizer = Adagrad(model.parameters(), lr=config.learning_rate)
+        elif config.optimizer == 'adamw':
+            optimizer = AdamW(model.parameters(), lr=config.learning_rate)
+
+        # Define scheduler
+        if config.scheduler == 'ReduceLROnPlateau':
+            scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5, verbose=True, threshold=0.005, threshold_mode='abs')
+        elif config.scheduler == 'LinearLR':
+            scheduler = lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=0.5, total_iters=2)
+        
+        loss_function = nn.CrossEntropyLoss(ignore_index=255)
+        
+        model_final, best_model = train(model, config.epochs, config.batch_size, [config.image_size,config.image_size], optimizer, loss_function, scheduler, config)
+        
+        torch.save(model_final, os.path.join(PATH_MODELS, 'model_{}.pth'.format(wandb.run.name)))
+        torch.save(best_model, os.path.join(PATH_MODELS, 'modelb_{}.pth'.format(wandb.run.name)))
+        print('Saved as: model_{}.pth'.format(wandb.run.name))
+
 if __name__ == "__main__":
-    epochs = 500
-    lr = 0.001
-    batch_size = 4
-    outs = 13
-    image_size = [224,224]
-    
-    model = create_model(outs)
-    #model = load_model('RailNet_DT/models/modelchp_105_300_0.001_32_[0.10826249 0.84361975 0.20432365 0.32408659].pth')
-
-    loss_function = nn.CrossEntropyLoss()
-    optimizer = Adam(model.parameters(), lr=lr)
-    #scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=10, verbose=True,
-                                                #threshold=0.005, threshold_mode='abs')
-    scheduler = lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=0.5, total_iters=30)
-
-    if WANDB:
-        wandb_init(epochs, lr, batch_size, outs, str(optimizer.__class__), str(scheduler.__class__))
-
-    model_final, best_model = train(model, epochs, batch_size, image_size, optimizer, loss_function)
-
-    torch.save(model_final, os.path.join(PATH_MODELS, 'model_{}_{}_{}_{}.pth'.format(epochs, lr, outs, batch_size)))
-    torch.save(best_model, os.path.join(PATH_MODELS, 'modelb_{}_{}_{}_{}.pth'.format(epochs, lr, outs, batch_size)))
-    #image = get_image_4_wandb(PATH_JPGS,image_size)
-    #torch.onnx.export(best_model, image, 'model_{}_{}_{}_{}.onnx'.format(epochs, lr, outs, batch_size))
-    #wandb.save("model_{}_{}_{}_{}.onnx".format(epochs, lr, outs, batch_size))
-    print('Saved as: model_{}_{}_{}_{}.pth'.format(epochs, lr, outs, batch_size))
-    if WANDB:
-        wandb.finish()
+        sweep_id = wandb.sweep(sweep_config, project="DP_train_full")
+        wandb.agent(sweep_id, sweep_train, count=10)

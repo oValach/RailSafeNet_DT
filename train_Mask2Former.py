@@ -1,6 +1,6 @@
-from dataloader import CustomDataset
+from dataloader_Mask2Former import CustomDataset
 from mAP import compute_map_cls, compute_IoU
-from torchvision.models.segmentation.deeplabv3 import DeepLabHead
+from transformers import Mask2FormerForUniversalSegmentation, Mask2FormerImageProcessor
 from torchvision import models
 from torch.optim import SGD, Adam, Adagrad
 from torch.utils.data import DataLoader
@@ -17,6 +17,7 @@ import wandb
 from tqdm import tqdm
 import time
 import copy
+
 
 def get_image_4_wandb(path, input_size = [224,224]):
     transform_img = A.Compose([
@@ -60,9 +61,10 @@ PATH_LOGS = "RailNet_DT/logs"
 
 
 def create_model(output_channels=1):
-    model = models.segmentation.deeplabv3_resnet50(weight=True, progress=True)
+    model = Mask2FormerForUniversalSegmentation.from_pretrained("facebook/mask2former-swin-tiny-ade-semantic",
+                                                            num_labels=output_channels,
+                                                            ignore_mismatched_sizes=True)
 
-    model.classifier = DeepLabHead(2048, output_channels)
     model.train()
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -100,7 +102,7 @@ def train(model, num_epochs, batch_size, image_size, optimizer, criterion):
         dl_lenval = 0
         
         for phase in ['Train', 'Valid']:
-
+            
             dataset = CustomDataset(PATH_JPGS, PATH_MASKS, image_size, subset=phase, val_fraction=0.5)
             dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
             
@@ -108,16 +110,26 @@ def train(model, num_epochs, batch_size, image_size, optimizer, criterion):
                 model.train()
                 dl_lentrain = len(dataloader)
                 
-                for inputs, masks in tqdm(dataloader):
+                for inputs, masks, cls_labels in tqdm(dataloader):
                     inputs = inputs.to(device)
                     masks = masks.to(device)
+                    cls_labels = cls_labels.to(device)
                     
                     # zero the parameter gradients
                     optimizer.zero_grad()
+                    outputs = model(inputs, mask_labels=masks, class_labels=cls_labels)
+                    logits = outputs.logits
+                    
+                    upsampled_logits = nn.functional.interpolate(
+                        logits,
+                        size=masks.shape[-2:],
+                        mode="bilinear",
+                        align_corners=False
+                    )
 
-                    outputs = model(inputs)
-                    outputs = outputs['out']
-                    loss = criterion(torch.squeeze(outputs), masks)
+                    upsampled_logits  = upsampled_logits.float()
+                    
+                    loss = criterion(upsampled_logits, masks)
 
                     loss.backward()  # gradients
                     optimizer.step()  # update parameters
@@ -132,11 +144,21 @@ def train(model, num_epochs, batch_size, image_size, optimizer, criterion):
                         inputs = inputs.to(device)
                         masks = masks.to(device)
 
-                        outputs = model(inputs)['out']
-                        loss = criterion(torch.squeeze(outputs), masks)
+                        outputs = model(inputs)
+                        logits = outputs.logits
+                        
+                        upsampled_logits = nn.functional.interpolate(
+                            logits,
+                            size=masks.shape[-2:],
+                            mode="bilinear",
+                            align_corners=False
+                        )
+
+                        upsampled_logits  = upsampled_logits.float()
+                        loss = criterion(upsampled_logits, masks)
 
                         val_loss += loss
-                        predicted_masks = outputs
+                        predicted_masks = upsampled_logits
                         gt_masks = masks.cpu().detach().numpy().squeeze()
                         for prediction, gt in zip(predicted_masks, gt_masks):
                             prediction = F.softmax(prediction, dim=0).cpu().detach().numpy().squeeze()
@@ -193,14 +215,14 @@ def train(model, num_epochs, batch_size, image_size, optimizer, criterion):
             print('Saving model for epoch {} as the best so far: modelb_{}_{}_{}_{}_{:3f}.pth'.format(epoch, epoch, epochs, lr, batch_size,classes_MIoU_all[0]))
             
         if WANDB:
-            normalized_results = outputs[0].softmax(dim=0).cpu().detach().numpy().squeeze()
+            normalized_results = upsampled_logits[0].softmax(dim=0).cpu().detach().numpy().squeeze()
             id_map = np.argmax(normalized_results, axis=0).astype(np.uint8)
             id_map = np.divide(id_map,np.max(id_map))
 
             im_classes = []
             for class_id in range(outs-1):
-                im_classes.append(wandb.Image((outputs[0][class_id].cpu()).detach().numpy(), caption="Prediction of a class {}".format(class_id+1)))
-            im_classes.append(wandb.Image((outputs[0][-1].cpu()).detach().numpy(), caption="Background"))
+                im_classes.append(wandb.Image((upsampled_logits[0][class_id].cpu()).detach().numpy(), caption="Prediction of a class {}".format(class_id+1)))
+            im_classes.append(wandb.Image((upsampled_logits[0][-1].cpu()).detach().numpy(), caption="Background"))
             id_log = wandb.Image(id_map, caption="Predicted ID map")
 
             mask_log = masks[0].cpu().detach().numpy() + 1
@@ -231,8 +253,8 @@ def train(model, num_epochs, batch_size, image_size, optimizer, criterion):
 if __name__ == "__main__":
     epochs = 500
     lr = 0.001
-    batch_size = 4
-    outs = 13
+    batch_size = 2
+    outs = 12
     image_size = [224,224]
     
     model = create_model(outs)

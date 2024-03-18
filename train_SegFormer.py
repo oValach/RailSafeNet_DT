@@ -1,8 +1,9 @@
-from dataloader import CustomDataset
+from dataloader_SegFormer import CustomDataset
 from mAP import compute_map_cls, compute_IoU
 from torchvision.models.segmentation.deeplabv3 import DeepLabHead
+from transformers import SegformerModel, SegformerConfig, SegformerForSemanticSegmentation, SegformerImageProcessor
 from torchvision import models
-from torch.optim import SGD, Adam, Adagrad
+from torch.optim import SGD, Adam, Adagrad, AdamW
 from torch.utils.data import DataLoader
 import torch.optim.lr_scheduler as lr_scheduler
 import torch.nn.functional as F
@@ -31,7 +32,7 @@ def get_image_4_wandb(path, input_size = [224,224]):
     
     return image
 
-def wandb_init(num_epochs, lr, batch_size, outputs, optimizer, scheduler):
+def wandb_init(num_epochs, lr, batch_size, outputs, optimizer, scheduler, model):
     wandb.init(
         project="DP_train_full",
         # name=f"experiment_{run}",
@@ -42,6 +43,7 @@ def wandb_init(num_epochs, lr, batch_size, outputs, optimizer, scheduler):
             "outputs": outputs,
             "optimizer": optimizer,
             "scheduler": scheduler,
+            "model": model,
         }
     )
 
@@ -60,9 +62,10 @@ PATH_LOGS = "RailNet_DT/logs"
 
 
 def create_model(output_channels=1):
-    model = models.segmentation.deeplabv3_resnet50(weight=True, progress=True)
+    model = SegformerForSemanticSegmentation.from_pretrained("nvidia/segformer-b0-finetuned-cityscapes-1024-1024",
+                                                            num_labels=output_channels,
+                                                            ignore_mismatched_sizes=True)
 
-    model.classifier = DeepLabHead(2048, output_channels)
     model.train()
     
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -101,7 +104,8 @@ def train(model, num_epochs, batch_size, image_size, optimizer, criterion):
         
         for phase in ['Train', 'Valid']:
 
-            dataset = CustomDataset(PATH_JPGS, PATH_MASKS, image_size, subset=phase, val_fraction=0.5)
+            image_processor = SegformerImageProcessor(size={"height": 1024, "width": 1024})
+            dataset = CustomDataset(PATH_JPGS, PATH_MASKS, image_processor, image_size, subset=phase, val_fraction=0.5)
             dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
             
             if phase == 'Train':
@@ -116,8 +120,18 @@ def train(model, num_epochs, batch_size, image_size, optimizer, criterion):
                     optimizer.zero_grad()
 
                     outputs = model(inputs)
-                    outputs = outputs['out']
-                    loss = criterion(torch.squeeze(outputs), masks)
+                    logits = outputs.logits
+                    
+                    upsampled_logits = nn.functional.interpolate(
+                        logits,
+                        size=masks.shape[-2:],
+                        mode="bilinear",
+                        align_corners=False
+                    )
+
+                    upsampled_logits  = upsampled_logits.float()
+                    
+                    loss = criterion(upsampled_logits, masks)
 
                     loss.backward()  # gradients
                     optimizer.step()  # update parameters
@@ -132,11 +146,21 @@ def train(model, num_epochs, batch_size, image_size, optimizer, criterion):
                         inputs = inputs.to(device)
                         masks = masks.to(device)
 
-                        outputs = model(inputs)['out']
-                        loss = criterion(torch.squeeze(outputs), masks)
+                        outputs = model(inputs)
+                        logits = outputs.logits
+                        
+                        upsampled_logits = nn.functional.interpolate(
+                            logits,
+                            size=masks.shape[-2:],
+                            mode="bilinear",
+                            align_corners=False
+                        )
+
+                        upsampled_logits  = upsampled_logits.float()
+                        loss = criterion(upsampled_logits, masks)
 
                         val_loss += loss
-                        predicted_masks = outputs
+                        predicted_masks = upsampled_logits
                         gt_masks = masks.cpu().detach().numpy().squeeze()
                         for prediction, gt in zip(predicted_masks, gt_masks):
                             prediction = F.softmax(prediction, dim=0).cpu().detach().numpy().squeeze()
@@ -193,14 +217,14 @@ def train(model, num_epochs, batch_size, image_size, optimizer, criterion):
             print('Saving model for epoch {} as the best so far: modelb_{}_{}_{}_{}_{:3f}.pth'.format(epoch, epoch, epochs, lr, batch_size,classes_MIoU_all[0]))
             
         if WANDB:
-            normalized_results = outputs[0].softmax(dim=0).cpu().detach().numpy().squeeze()
+            normalized_results = upsampled_logits[0].softmax(dim=0).cpu().detach().numpy().squeeze()
             id_map = np.argmax(normalized_results, axis=0).astype(np.uint8)
             id_map = np.divide(id_map,np.max(id_map))
 
             im_classes = []
             for class_id in range(outs-1):
-                im_classes.append(wandb.Image((outputs[0][class_id].cpu()).detach().numpy(), caption="Prediction of a class {}".format(class_id+1)))
-            im_classes.append(wandb.Image((outputs[0][-1].cpu()).detach().numpy(), caption="Background"))
+                im_classes.append(wandb.Image((upsampled_logits[0][class_id].cpu()).detach().numpy(), caption="Prediction of a class {}".format(class_id+1)))
+            im_classes.append(wandb.Image((upsampled_logits[0][-1].cpu()).detach().numpy(), caption="Background"))
             id_log = wandb.Image(id_map, caption="Predicted ID map")
 
             mask_log = masks[0].cpu().detach().numpy() + 1
@@ -230,7 +254,7 @@ def train(model, num_epochs, batch_size, image_size, optimizer, criterion):
 
 if __name__ == "__main__":
     epochs = 500
-    lr = 0.001
+    lr = 0.00006
     batch_size = 4
     outs = 13
     image_size = [224,224]
@@ -238,14 +262,14 @@ if __name__ == "__main__":
     model = create_model(outs)
     #model = load_model('RailNet_DT/models/modelchp_105_300_0.001_32_[0.10826249 0.84361975 0.20432365 0.32408659].pth')
 
-    loss_function = nn.CrossEntropyLoss()
-    optimizer = Adam(model.parameters(), lr=lr)
+    loss_function = nn.CrossEntropyLoss(ignore_index=255)
+    optimizer = AdamW(model.parameters(), lr=lr)
     #scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=10, verbose=True,
                                                 #threshold=0.005, threshold_mode='abs')
     scheduler = lr_scheduler.LinearLR(optimizer, start_factor=1.0, end_factor=0.5, total_iters=30)
 
     if WANDB:
-        wandb_init(epochs, lr, batch_size, outs, str(optimizer.__class__), str(scheduler.__class__))
+        wandb_init(epochs, lr, batch_size, outs, str(optimizer.__class__), str(scheduler.__class__), str(model.__class__))
 
     model_final, best_model = train(model, epochs, batch_size, image_size, optimizer, loss_function)
 

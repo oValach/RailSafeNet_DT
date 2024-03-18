@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import torch
+import json
 import cv2
 import os
 import torch.nn as nn
@@ -10,15 +11,16 @@ import torch.nn.functional as F
 from mAP import compute_map_cls, compute_IoU, image_morpho
 from rs19_val.example_vis import rs19_label2bgr
 
-PATH_jpgs = 'RailNet_DT/rs19_val/jpgs/test'
-PATH_jpg = 'RailNet_DT/rs19_val/jpgs/test/rs07700.jpg'
-PATH_mask = 'RailNet_DT/rs19_val/uint8/test/rs07700.png'
-PATH_masks = 'RailNet_DT/rs19_val/uint8/test'
-PATH_model = 'RailNet_DT/models/modelchp_comic-sweep-7_60_0.621077.pth'
+mask_path = "RailNet_DT\\railway_dataset\media\images\mask"
+eda_path = "RailNet_DT\\railway_dataset\eda_table.table.json"
+data_json = json.load(open(eda_path, 'r'))
+PATH_base = "RailNet_DT\\railway_dataset"
+PATH_model = 'RailNet_DT/models/modelchp_glorious-sweep-7_70_0.614606.pth'
+
 #model_300_0.001_13_16_dd_adamw.pth, model_300_0.005_13_32_fp_adamw.pth, model_300_0.01_13_16_wh.pth
 #modelchp_170_300_0.001_32_0.671144_aug.pth!, modelchp_105_200_0.001_32_0.725929_rf.pth, modelchp_185_200_0.001_32_0.788379_robustfire_noaug_480x480.pth
 
-def load(filename, input_size=[224,224]):
+def load(item, input_size=[224,224]):
     transform_img = A.Compose([
                     A.Resize(height=input_size[0], width=input_size[1], interpolation=cv2.INTER_NEAREST),
                     A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
@@ -29,19 +31,12 @@ def load(filename, input_size=[224,224]):
                     ToTensorV2(p=1.0),
                     ])
     
-    image = cv2.imread(os.path.join(PATH_jpgs, filename))
-    mask_pth = os.path.join(PATH_masks, filename).replace('.jpg', '.png')
-    mask = cv2.imread(mask_pth, cv2.IMREAD_GRAYSCALE)
-
-    # LOAD THE IMAGE
-    #im_jpg = cv2.resize(image, (224, 224), interpolation=cv2.INTER_NEAREST)
-    #image = torch.tensor(im_jpg, dtype=torch.float32)
-    #image_norm = torch.div(image.permute(2, 0, 1), 254) # input normalization
-    #image_norm = image_norm.unsqueeze(0)
+    img_path = item[1][1]["path"]
+    mask_path = item[1][1]["masks"]["ground_truth"]["path"]
     
-    # LOAD THE MASK
-    #id_map_gt = cv2.resize(mask_gr, (224, 224), interpolation=cv2.INTER_NEAREST)
-    #mask = torch.tensor(id_map_gt, dtype=torch.float32).long()
+    image = cv2.imread(os.path.join(PATH_base, img_path))
+    mask_pth = os.path.join(PATH_base, mask_path)
+    mask = cv2.imread(mask_pth, cv2.IMREAD_GRAYSCALE)
 
     image_tr = transform_img(image=image)['image']
     image_tr = image_tr.unsqueeze(0)
@@ -56,28 +51,23 @@ def load(filename, input_size=[224,224]):
     
     return image_tr, image_vis, mask, mask_id_map, model
 
-def remap_ignored_clss(id_map):
-    ignore_list = [0,1,2,6,8,9,15,16,19,20]
-    for cls in ignore_list:
-        id_map[id_map==cls] = 255
+def merge_ids(id_map):
+    id_to_merge = [0,6,9,10]
+    ids_all = np.unique(id_map)
 
-    ignore_set = set(ignore_list)
-    cls_remaining = [num for num in range(0, 22) if num not in ignore_set]
-
-    # renumber the remaining classes 0-number of remaining classes
-    for idx, cls in enumerate(cls_remaining):
-        id_map[id_map==cls] = idx
-
-    id_map[id_map==255] = 12 # background
+    for id in ids_all:
+        if id in id_to_merge:
+            id_map[id_map==id] = 30 # object
+        else:
+            id_map[id_map==id] = 0 # background
+    
+    id_map[id_map==30] = 1
     
     return id_map
 
 def prepare_for_display(mask, image, id_map, rs19_label2bgr, image_size = [224,224]):
-    # Mask + prediction preparation
-    mask = mask + 1
-    mask[mask==256] = 0
-    mask = remap_ignored_clss(mask)
-    mask = (mask + 100).detach().numpy().squeeze().astype(np.uint8)
+    mask[mask==1] = 100
+    mask = mask.detach().numpy().squeeze().astype(np.uint8)
     mask_rgb = cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB)
 
     # Opacity channel addition to both mask and img
@@ -113,8 +103,8 @@ def visualize(rgba_blend, rgba_mask):
     image1 = rgba_blend
     image2 = rgba_mask
 
-    initial_opacity1 = 0.05
-    initial_opacity2 = 0.95
+    initial_opacity1 = 0.8
+    initial_opacity2 = 0.6
     # Load two smaller images
     small_image1 = cv2.resize(image1, (300, 300), interpolation=cv2.INTER_NEAREST)
     small_image2 = cv2.resize(image2, (300, 300), interpolation=cv2.INTER_NEAREST)
@@ -199,8 +189,9 @@ if __name__ == "__main__":
     images_computed = 0
     
     #print(os.getcwd())
-    for filename in os.listdir(PATH_jpgs):
+    for item in enumerate(data_json["data"]):
         images_computed += 1
+        filename = item[1][1]["sha256"][0:20]
         
         image_size = [512,512]
         vis = True
@@ -208,7 +199,7 @@ if __name__ == "__main__":
         #if images_computed > 50:
         #    break
         
-        image_norm, image, mask, id_map_gt, model = load(filename, image_size)
+        image_norm, image, mask, id_map_gt, model = load(item, image_size)
 
         # INFERENCE + SOFTMAX
         #output = model(image_norm)['out'] #resnet deeplab
@@ -229,9 +220,11 @@ if __name__ == "__main__":
         id_map = np.argmax(confidence_scores, axis=0).astype(np.uint8)
         id_map = image_morpho(id_map)
         
+        id_map = merge_ids(id_map)
+        id_map[id_map == 0] = 12
+        id_map_gt[id_map_gt == 0] = 12
         
         # mAP
-        id_map_gt = remap_ignored_clss(id_map_gt)
         map,classes_ap  = compute_map_cls(id_map_gt, id_map, classes_ap)
         Mmap,classes_Map = compute_map_cls(id_map_gt, id_map, classes_Map, major = True)
         IoU,acc,prec,rec,classes_stats = compute_IoU(id_map_gt, id_map, classes_stats)

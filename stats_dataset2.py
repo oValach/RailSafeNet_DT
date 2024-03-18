@@ -43,7 +43,7 @@ for item in enumerate(data["data"]):
         counter_notmasked+=1
 print("Masked: {}, Not masked: {}".format(counter_masked, counter_notmasked))
 
-plot = 0
+plot = 1
 counter_rails = 0
 counter_siderails = 0
 for filename in os.listdir(mask_path):
@@ -57,5 +57,5 @@ for filename in os.listdir(mask_path):
     if plot:
         plt.imshow(image[:,:,0],cmap="gray")
         plt.show()
-    
+
 print("Rails: {}, Side rails: {}".format(counter_rails, counter_siderails))

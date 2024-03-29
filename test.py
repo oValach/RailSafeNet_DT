@@ -14,18 +14,21 @@ PATH_jpgs = 'RailNet_DT/rs19_val/jpgs/test'
 PATH_jpg = 'RailNet_DT/rs19_val/jpgs/test/rs07700.jpg'
 PATH_mask = 'RailNet_DT/rs19_val/uint8/test/rs07700.png'
 PATH_masks = 'RailNet_DT/rs19_val/uint8/test'
-PATH_model = 'RailNet_DT/models/modelchp_comic-sweep-7_60_0.621077.pth'
+PATH_model = 'RailNet_DT/models/modelchp_85_100_0.0002865237576874738_2_0.606629.pth'
 #model_300_0.001_13_16_dd_adamw.pth, model_300_0.005_13_32_fp_adamw.pth, model_300_0.01_13_16_wh.pth
 #modelchp_170_300_0.001_32_0.671144_aug.pth!, modelchp_105_200_0.001_32_0.725929_rf.pth, modelchp_185_200_0.001_32_0.788379_robustfire_noaug_480x480.pth
 
-def load(filename, input_size=[224,224]):
+def load(filename, path_model, input_size=[224,224]):
+    transform_resize = A.Compose([
+                    A.RandomResizedCrop(height=input_size[0], width=input_size[1], scale=(0.8, 1.0)),
+                    ])
     transform_img = A.Compose([
-                    A.Resize(height=input_size[0], width=input_size[1], interpolation=cv2.INTER_NEAREST),
+                    #A.Resize(height=input_size[0], width=input_size[1], interpolation=cv2.INTER_NEAREST),
                     A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
                     ToTensorV2(p=1.0),
                     ])
     transform_mask = A.Compose([
-                    A.Resize(height=input_size[0], width=input_size[1], interpolation=cv2.INTER_NEAREST),
+                    #A.Resize(height=input_size[0], width=input_size[1], interpolation=cv2.INTER_NEAREST),
                     ToTensorV2(p=1.0),
                     ])
     
@@ -43,6 +46,10 @@ def load(filename, input_size=[224,224]):
     #id_map_gt = cv2.resize(mask_gr, (224, 224), interpolation=cv2.INTER_NEAREST)
     #mask = torch.tensor(id_map_gt, dtype=torch.float32).long()
 
+    transformed = transform_resize(image=image, mask=mask)
+    image = transformed['image']
+    mask = transformed['mask']
+    
     image_tr = transform_img(image=image)['image']
     image_tr = image_tr.unsqueeze(0)
     image_vis = transform_mask(image=image)['image']
@@ -50,7 +57,7 @@ def load(filename, input_size=[224,224]):
     mask_id_map = np.array(mask.cpu().detach().numpy(), dtype=np.uint8)
     
     # LOAD THE MODEL
-    model = torch.load(PATH_model, map_location=torch.device('cpu'))
+    model = torch.load(path_model, map_location=torch.device('cpu'))
     model, image_tr = model.cpu(), image_tr.cpu()
     model.eval()
     
@@ -192,43 +199,50 @@ def stats_mean_and_reorder(classes_ap,classes_Map,classes_stats,classes_Mstats):
 
     return classes_ap,classes_Map,classes_stats,classes_Mstats
 
+def process(model, input_img, mask, model_type):
+    if model_type == "segformer":
+        outputs = model(input_img) # segformer
+    elif model_type == "deeplab":
+        outputs = model(input_img)['out'] # deeplab resnet
+    
+    logits = outputs.logits
+    upsampled_logits = nn.functional.interpolate(
+        logits,
+        size=mask.shape[-2:],
+        mode="bilinear",
+        align_corners=False
+    )
+    
+    output  = upsampled_logits.float()
+        
+    confidence_scores = F.softmax(output, dim=1).cpu().detach().numpy().squeeze()
+    id_map = np.argmax(confidence_scores, axis=0).astype(np.uint8)
+    id_map = image_morpho(id_map)
+    
+    return id_map
 
 if __name__ == "__main__":
     mAPs,MmAPs,IoUs,MIoUs,accs,Maccs,precs,Mprecs,recs,Mrecs= list(),list(),list(),list(),list(),list(),list(),list(),list(),list()
     classes_ap,classes_Map,classes_stats,classes_Mstats = {},{},{},{}
     images_computed = 0
     
-    #print(os.getcwd())
     for filename in os.listdir(PATH_jpgs):
         images_computed += 1
         
-        image_size = [512,512]
         vis = True
+        to_break = False
+        image_size = [1024,1024]
         
-        #if images_computed > 50:
-        #    break
+        if to_break:
+            if images_computed > 50:
+                break
         
-        image_norm, image, mask, id_map_gt, model = load(filename, image_size)
+        filename = 'rs07848.jpg'
+        image_norm, image, mask, id_map_gt, model = load(filename, PATH_model, image_size)
 
         # INFERENCE + SOFTMAX
-        #output = model(image_norm)['out'] #resnet deeplab
-        
-        outputs = model(image_norm) # segformer
-        logits = outputs.logits
-        
-        upsampled_logits = nn.functional.interpolate(
-            logits,
-            size=mask.shape[-2:],
-            mode="bilinear",
-            align_corners=False
-        )
-
-        output  = upsampled_logits.float()
-        
-        confidence_scores = F.softmax(output, dim=1).cpu().detach().numpy().squeeze()
-        id_map = np.argmax(confidence_scores, axis=0).astype(np.uint8)
-        id_map = image_morpho(id_map)
-        
+        model_type = "segformer" #"deeplab"
+        id_map = process(model, image_norm, mask, model_type)
         
         # mAP
         id_map_gt = remap_ignored_clss(id_map_gt)

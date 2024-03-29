@@ -18,14 +18,25 @@ class CustomDataset(VisionDataset):
         # Define data transformations using Albumentations
         if subset == 'Train': 
             self.transform_base = A.Compose([
-                            A.Resize(height=image_size[0], width=image_size[1], interpolation=cv2.INTER_NEAREST),
                             A.HorizontalFlip(p=0.5),
-                            A.RandomBrightnessContrast(p=0.3),
-                            A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2, p=0.3),
                             A.ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.1, rotate_limit=15, p=0.5),
+                            A.OneOf([
+                                A.RandomBrightnessContrast(p=1),
+                                A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2, p=1),
+                            ], p=0.3),
+                            A.OneOf([
+                                A.RandomRain(brightness_coefficient=0.9, drop_width=1, blur_value=5, p=1),
+                                A.RandomSunFlare(flare_roi=(0.5, 0.6, 0.7, 0.7), angle_lower=0.5, src_radius=350, p=1),
+                                A.RandomSnow(brightness_coeff=2.5, snow_point_lower=0.2, snow_point_upper=0.8, p=1),
+                                A.RandomFog(fog_coef_lower=0.2, fog_coef_upper=0.3, alpha_coef=0.3, p=1),
+                            ], p=0.3),
+                            A.OneOf([
+                                A.CoarseDropout(max_holes=100, max_height=30, max_width=30, min_height=10, min_width=10, min_holes=50, fill_value=0, p=1),
+                                A.GaussianBlur(blur_limit=(11, 21), p=1),
+                                A.GaussNoise(var_limit=(300.0, 650.0), mean=0, per_channel=True, p=1),
+                                A.ISONoise(color_shift=(0.1, 0.5), intensity=(0.6, 0.9), p=1),
+                            ], p=0.5),
                             A.RandomResizedCrop(height=image_size[0], width=image_size[1], scale=(0.8, 1.0)),
-                            A.CoarseDropout(max_holes=8, max_height=8, max_width=8, min_holes=2, fill_value=0, p=0.5),
-                            A.GaussianBlur(blur_limit=(3, 7), p=0.2),
                             ])
         elif subset == 'Valid':
             self.transform_base = A.Compose([

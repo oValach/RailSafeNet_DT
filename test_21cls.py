@@ -29,6 +29,8 @@ def load(filename, input_size=[224,224]):
                     ToTensorV2(p=1.0),
                     ])
     
+    #image = cv2.imread("F:/StableDiffusion/stable-diffusion-webui/output/img2img-images\\2024-03-19\\00062-1020183852.png")
+    
     image = cv2.imread(os.path.join(PATH_jpgs, filename))
     mask_pth = os.path.join(PATH_masks, filename).replace('.jpg', '.png')
     mask = cv2.imread(mask_pth, cv2.IMREAD_GRAYSCALE)

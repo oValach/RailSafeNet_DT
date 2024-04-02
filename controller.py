@@ -2,7 +2,7 @@ import cv2
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from sahi.prediction import ObjectPrediction
+from sklearn.linear_model import LinearRegression
 from ultralyticsplus import YOLO, render_result
 from test import load, process
 
@@ -31,7 +31,7 @@ def find_extreme_y_values(arr, values=[0, 6]):
         
         return y_indices[0], y_indices[-1]
 
-def find_edges(arr, y_levels, values=[0, 1, 6], min_width=38):
+def find_edges(arr, y_levels, values=[0, 1, 6], min_width=19):
         """
         Find start and end positions of continuous sequences of specified values at given y-levels in a 2D array,
         filtering for sequences that meet or exceed a specified minimum width.
@@ -56,7 +56,8 @@ def find_edges(arr, y_levels, values=[0, 1, 6], min_width=38):
 
                 # Filter sequences based on the minimum width criteria
                 filtered_edges = [(start, end) for start, end in zip(starts, ends) if end - start + 1 >= min_width]
-
+                filtered_edges = [(start, end) for start, end in filtered_edges if 0 not in (start, end) and 1919 not in (start, end)]
+                
                 edges_dict[y] = filtered_edges
 
         return edges_dict
@@ -89,7 +90,7 @@ def mark_edges(arr, edges_dict, mark_value):
 
         return marked_arr
 
-def mark_dist_from_edges(marked_image, edges_dict, real_life_width_mm, real_life_target_mm, mark_value=30):
+def find_dist_from_edges(image, edges_dict, real_life_width_mm, real_life_target_mm, mark_value=30):
         """
         Mark regions representing a real-life distance (e.g., 2 meters) to the left and right from the furthest edges.
         
@@ -103,32 +104,187 @@ def mark_dist_from_edges(marked_image, edges_dict, real_life_width_mm, real_life
         - A NumPy array with the marked regions.
         """
         # Calculate the average sequence width in pixels
-        average_diffs = {k: sum(e-s for s, e in v) / len(v) for k, v in edges_dict.items()}
+        average_diffs = {k: sum(e-s for s, e in v) / len(v) for k, v in edges_dict.items() if v}
         # Pixel to mm scale factor
         scale_factors = {k: real_life_width_mm / v for k, v in average_diffs.items()}
         # Converting the real-life target distance to pixels
         target_distances_px = {k: int(real_life_target_mm / v) for k, v in scale_factors.items()}
 
         # Mark the regions representing the target distance to the left and right from the furthest edges
+        end_points_left = {}
+        end_points_right = {}
         for y, edge_list in edges_dict.items():
                 min_edge = min(edge_list)[0]
                 max_edge = max(edge_list)[1]
                 
                 # Ensure we stay within the image bounds
                 left_mark_start = max(0, min_edge - int(target_distances_px[y]))
-                right_mark_end = min(marked_image.shape[1], max_edge + int(target_distances_px[y]))
+                if left_mark_start != 0:
+                        end_points_left[y] = left_mark_start
+                right_mark_end = min(image.shape[1], max_edge + int(target_distances_px[y]))
+                if right_mark_end != image.shape[1]:
+                        end_points_right[y] = right_mark_end
                 
-                # Mark the left region
-                if left_mark_start < min_edge:
-                        marked_image[y, left_mark_start:min_edge] = mark_value
+                mark=1
+                if mark:
+                        # Mark the left region
+                        if left_mark_start < min_edge:
+                                image[y, left_mark_start:min_edge] = mark_value
+                        
+                        # Mark the right region
+                        if max_edge < right_mark_end:
+                                image[y, max_edge:right_mark_end] = mark_value
+
+        return image, end_points_left, end_points_right
+
+def bresenham_line(x0, y0, x1, y1):
+        """
+        Generate the coordinates of a line from (x0, y0) to (x1, y1) using Bresenham's algorithm.
+        """
+        line = []
+        dx = abs(x1 - x0)
+        dy = -abs(y1 - y0)
+        sx = 1 if x0 < x1 else -1
+        sy = 1 if y0 < y1 else -1
+        err = dx + dy  # error value e_xy
+
+        while True:
+                line.append((x0, y0))  # Add the current point to the line
+                if x0 == x1 and y0 == y1:
+                        break
+                e2 = 2 * err
+                if e2 >= dy:  # e_xy+e_x > 0
+                        err += dy
+                        x0 += sx
+                if e2 <= dx:  # e_xy+e_y < 0
+                        err += dx
+                        y0 += sy
+
+        return line
+
+def interpolate_end_points(end_points_dict):
+        line_arr = []
+        ys = list(end_points_dict.keys())
+        xs = list(end_points_dict.values())
+
+        for i in range(0, len(ys) - 1):
+                y1, y2 = ys[i], ys[i + 1]
+                x1, x2 = xs[i], xs[i + 1]
+                line = bresenham_line(x1, y1, x2, y2)
+                line_arr = line_arr + line
                 
-                # Mark the right region
-                if max_edge < right_mark_end:
-                        marked_image[y, max_edge:right_mark_end] = mark_value
+        return line_arr
 
-        return marked_image
+def extrapolate_line(pixels, image, min_y=None):
+        """
+        Extrapolate a line based on the last segment using linear regression.
 
-show = 1
+        Parameters:
+        - pixels: List of (x, y) tuples representing line pixel coordinates.
+        - image: 2D numpy array representing the image.
+        - max_y: Maximum y-value to extrapolate to (optional).
+
+        Returns:
+        - A list of new extrapolated (x, y) pixel coordinates.
+        """
+        # Check if the pixel list is shorter than the window for regression
+        if len(pixels) < 10:
+                raise ValueError("Not enough pixels to perform extrapolation.")
+
+        # Take the last 30 pixels for the regression
+        recent_pixels = np.array(pixels[-30:])
+        
+        # Prepare data for regression
+        X = recent_pixels[:, 0].reshape(-1, 1)  # Reshape for sklearn
+        y = recent_pixels[:, 1]
+
+        # Fit the linear regression
+        model = LinearRegression()
+        model.fit(X, y)
+
+        # Get the coefficients
+        slope = model.coef_[0]
+        intercept = model.intercept_
+
+        # Define the extrapolation function
+        extrapolate = lambda x: slope * x + intercept
+
+        # Initialize with the last known pixel
+        last_pixel = pixels[-1]
+        new_pixels = []
+        x, y = last_pixel
+
+        # Calculate the direction for extrapolation
+        dx = 1 if pixels[-1][0] - pixels[-2][0] > 0 else -1
+
+        # Minimum y limit is either the provided min_y or the height of the image
+        min_y = min_y if min_y is not None else image.shape[0] - 1
+
+        # Extrapolate until we hit the min y limit or the border of the image
+        while 0 <= x < image.shape[1] and min_y < y < image.shape[0]:
+                x += dx
+                y = int(extrapolate(x))
+                
+                # Check bounds
+                if 0 <= y < image.shape[0]:
+                        if 0 <= x < image.shape[1]:
+                                new_pixels.append((x, y))
+                else:
+                        break  # Stop if we go outside the image bounds
+
+        return new_pixels
+
+def extrapolate_borders(dist_marked_id_map, border_l, border_r, lowest_y):
+        
+        border_extrapolation_l1 = extrapolate_line(border_l, dist_marked_id_map, lowest_y)
+        border_extrapolation_l2 = extrapolate_line(border_l[::-1], dist_marked_id_map, lowest_y)
+        
+        border_l = border_l + border_extrapolation_l1 + border_extrapolation_l2
+        
+        border_extrapolation_r1 = extrapolate_line(border_r, dist_marked_id_map, lowest_y)
+        border_extrapolation_r2 = extrapolate_line(border_r[::-1], dist_marked_id_map, lowest_y)
+        
+        border_r = border_r + border_extrapolation_r1 + border_extrapolation_r2
+        
+        return border_l, border_r
+
+def find_zone_border(image, edges, irl_width_mm=1435, irl_target_mm=1000, lowest_y = 0):
+        
+        irl_width_mm = 1435
+        
+        dist_marked_id_map, end_points_left, end_points_right = find_dist_from_edges(image, edges, irl_width_mm, irl_target_mm+70) # 1 meter + 70mm rail width
+        
+        border_l = interpolate_end_points(end_points_left)
+        border_r = interpolate_end_points(end_points_right)
+        
+        border_l, border_r = extrapolate_borders(dist_marked_id_map, border_l, border_r, lowest_y)
+        
+        return [border_l, border_r]
+
+def visualize(id_map, border_1m, border_2m, border_3m):
+        for point in border_1m[0]:
+                id_map[point[1],point[0]] = 30
+        for point in border_1m[1]:
+                id_map[point[1],point[0]] = 30
+        for point in border_2m[0]:
+                id_map[point[1],point[0]] = 30
+        for point in border_2m[1]:
+                id_map[point[1],point[0]] = 30
+        for point in border_3m[0]:
+                id_map[point[1],point[0]] = 30
+        for point in border_3m[1]:
+                id_map[point[1],point[0]] = 30
+        
+        plt.imshow(id_map)
+
+def get_clues(lowest, highest, number_of_clues):
+        clue_step = int((highest - lowest) / number_of_clues+1)
+        clues = []
+        for i in range(number_of_clues):
+                clues.append(highest - (i*clue_step))
+        
+        return clues
+vis = 1
 for filename in os.listdir(PATH_jpgs):
         
         # Segmentation
@@ -136,7 +292,7 @@ for filename in os.listdir(PATH_jpgs):
         image_norm, image, mask, _, model = load(filename, PATH_model, image_size)
         model_type = "segformer" #deeplab
         id_map = process(model, image_norm, mask, model_type)
-        resized_id_map = cv2.resize(id_map, [1920,1080], interpolation=cv2.INTER_NEAREST)
+        id_map = cv2.resize(id_map, [1920,1080], interpolation=cv2.INTER_NEAREST)
         
         # Detection
         model = YOLO('ultralyticsplus/yolov8s')
@@ -157,37 +313,29 @@ for filename in os.listdir(PATH_jpgs):
         boxes_moving = {}
         boxes_stationary = {}
         if len(bbox) > 0:
-                for xyxy, cls in zip(bbox, cls):
-                        if cls in accepted_moving:
-                                if len(boxes_moving[cls]) > 0:
-                                        boxes_moving[cls] = boxes_moving[cls].append(xyxy)
+                for xyxy, clss in zip(bbox, cls):
+                        if clss in accepted_moving:
+                                if clss in boxes_moving.keys() and len(boxes_moving[clss]) > 0:
+                                        boxes_moving[clss] = boxes_moving[clss].append(xyxy)
                                 else:
-                                        boxes_moving[cls] = xyxy
-                        if cls in accepted_stationary:
-                                if len(boxes_stationary[cls]) > 0:
-                                        boxes_stationary[cls] = boxes_stationary[cls].append(xyxy)
+                                        boxes_moving[clss] = xyxy
+                        if clss in accepted_stationary:
+                                if clss in boxes_stationary.keys() and len(boxes_stationary[clss]) > 0:
+                                        boxes_stationary[clss] = boxes_stationary[clss].append(xyxy)
                                 else:
-                                        boxes_stationary[cls] = xyxy
+                                        boxes_stationary[clss] = xyxy
 
-        lowest_y, highest_y = find_extreme_y_values(resized_id_map)
-        clue_interval = int((highest_y - lowest_y) / 5)
-        clues = [highest_y-4*clue_interval,highest_y-3*clue_interval,highest_y-2*clue_interval, highest_y-clue_interval, highest_y]
+        lowest_y, highest_y = find_extreme_y_values(id_map)
+
+        clues = get_clues(lowest_y, highest_y, 10)
         
-        edges = find_edges(resized_id_map, clues, min_width=int(resized_id_map.shape[1]*0.02))
+        edges = find_edges(id_map, clues, min_width=int(id_map.shape[1]*0.02))
         
-        id_map_marked = mark_edges(resized_id_map, edges, 30)
+        id_map_marked = mark_edges(id_map, edges, 30)
         
-        dist_marked_id_map = mark_dist_from_edges(id_map_marked, edges, 1435, 2070)
-        plt.imshow(dist_marked_id_map)
-        plt.show()
-        # min number of continuous pixels of interrail zone is 2% of pictures width
-        if show:
-                render = render_result(model=model, image=image, result=results[0])
-                plt.figure(figsize=(5, 2.5))
-                plt.subplot(1, 2, 1)
-                plt.imshow(id_map)
-                plt.axis('off')
-                plt.subplot(1, 2, 2)
-                plt.imshow(render)
-                plt.axis('off')
-                plt.show()
+        border_1m = find_zone_border(id_map, edges, irl_target_mm=1000, lowest_y = lowest_y)
+        border_2m = find_zone_border(id_map, edges, irl_target_mm=2000, lowest_y = lowest_y)
+        border_3m = find_zone_border(id_map, edges, irl_target_mm=3000, lowest_y = lowest_y)
+        
+        if vis:
+                visualize(id_map, border_1m, border_2m, border_3m)

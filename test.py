@@ -237,7 +237,7 @@ if __name__ == "__main__":
             if images_computed > 50:
                 break
         
-        filename = 'rs07848.jpg'
+        #filename = 'rs07848.jpg'
         image_norm, image, mask, id_map_gt, model = load(filename, PATH_model, image_size)
 
         # INFERENCE + SOFTMAX

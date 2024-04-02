@@ -60,6 +60,8 @@ def find_edges(arr, y_levels, values=[0, 1, 6], min_width=19):
                 
                 edges_dict[y] = filtered_edges
 
+        edges_dict = {k: v for k, v in edges_dict.items() if v}
+        
         return edges_dict
 
 def mark_edges(arr, edges_dict, mark_value):
@@ -89,6 +91,42 @@ def mark_edges(arr, edges_dict, mark_value):
                                                 marked_arr[y + dy, end + dx] = mark_value
 
         return marked_arr
+
+def find_rail_sides(edges_dict):
+        left_border = []
+        right_border = []
+        for y,xs in edges_dict.items():
+                left_border.append([min(xs)[0],y])
+                right_border.append([max(xs)[1],y])
+
+        # funkce outlieru zastavi na prvni nespojitosti -> delsi zona mela nespojitost na konci -> chci tu
+        left_border_side1 = robust_rail_sides(left_border) # filter outliers
+        right_border_side1 = robust_rail_sides(right_border)
+        
+        left_border_side2 = robust_rail_sides(left_border[::-1]) # filter outliers
+        right_border_side2 = robust_rail_sides(right_border[::-1])
+        
+        left_border = left_border_side1 if len(left_border_side1)>=len(left_border_side2) else left_border_side2
+        right_border = right_border_side1 if len(right_border_side1)>=len(right_border_side2) else right_border_side2
+        
+        return left_border, right_border
+
+def robust_rail_sides(border, threshold=3):
+        border = np.array(border)
+        
+        steps_x = np.diff(border[:, 0])
+        median_step = np.median(steps_x)
+        
+        threshold_step = np.abs(threshold*np.abs(median_step))
+        
+        filtered_border = [border[0]]
+        for i in range(1,len(border)):
+                diff = np.abs((border[i][0]-border[i-1][0]))
+                if np.abs(diff) > threshold_step:
+                        break
+                else:
+                        filtered_border.append(border[i])
+        return filtered_border
 
 def find_dist_from_edges(image, edges_dict, real_life_width_mm, real_life_target_mm, mark_value=30):
         """
@@ -251,6 +289,8 @@ def extrapolate_borders(dist_marked_id_map, border_l, border_r, lowest_y):
 def find_zone_border(image, edges, irl_width_mm=1435, irl_target_mm=1000, lowest_y = 0):
         
         irl_width_mm = 1435
+        
+        rail_sides = find_rail_sides(edges)
         
         dist_marked_id_map, end_points_left, end_points_right = find_dist_from_edges(image, edges, irl_width_mm, irl_target_mm+70) # 1 meter + 70mm rail width
         

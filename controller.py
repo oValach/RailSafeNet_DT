@@ -3,7 +3,9 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
-from ultralyticsplus import YOLO, render_result
+from collections import defaultdict
+import matplotlib.path as mplPath
+from ultralyticsplus import YOLO
 from test import load, process
 
 PATH_jpgs = 'RailNet_DT/rs19_val/jpgs/test'
@@ -409,11 +411,51 @@ def manage_detections(results, model):
 
 def classify_detections(boxes_moving, boxes_stationary, borders):
         
+        colors = ["red","orange","yellow","green","blue"]
+        
+        borders_extremes = []        
+        for border in borders:
+                border_l = np.array(border[0])
+                max_l_x = np.max(border_l[:, 0])
+                max_l_y = np.max(border_l[:, 1])
+                min_l_x = np.min(border_l[:, 0])
+                min_l_y = np.min(border_l[:, 1])
+                endpoints_l = [border_l[0],border_l[-1]]
+                
+                border_r = np.array(border[1])
+                max_p_x = np.max(border_r[:, 0])
+                max_p_y = np.max(border_r[:, 1])
+                min_p_x = np.min(border_r[:, 0])
+                min_p_y = np.min(border_r[:, 1])
+                borders_extremes.append([[max_l_x,max_l_y],[min_l_x,min_l_y],[max_p_x,max_p_y],[min_p_x,min_p_y]])
+                endpoints_r = [border_r[0],border_r[-1]]
+                
+        
+        boxes_moving_info = []
+        boxes_stationary_info = []
+        
+        if boxes_moving or boxes_stationary:
+                if boxes_moving:
+                        for item, coords in boxes_moving.items():
+                                for coord in coords:
+                                        x = coord[0]
+                                        y = coord[1]
+                                        xx = coord[2]
+                                        yy = coord[3]
+                                        center_point_x = x + ((xx-x)/2)
+                                        center_point_y = y + ((yy-y)/2)
+                                        
+                                        
+                                                
+                if boxes_stationary:
+                        print("jou")
+                
+        else:
+                print("No accepted detections in this image.")
+                return
         
         print("jou")
-        
-        
-        
+
 vis = 1
 
 for filename_img in os.listdir(PATH_jpgs):
@@ -434,4 +476,6 @@ for filename_img in os.listdir(PATH_jpgs):
         # Detection
         results, model = detect(PATH_model_det, filename_img, PATH_jpgs)
         boxes_moving, boxes_stationary = manage_detections(results, model)
+        
+        classification = classify_detections(boxes_moving, boxes_stationary, borders)
         

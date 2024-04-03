@@ -31,7 +31,7 @@ def find_extreme_y_values(arr, values=[0, 6]):
         
         return y_indices[0], y_indices[-1]
 
-def find_edges(arr, y_levels, values=[0, 1, 6], min_width=19):
+def find_edges(arr, y_levels, values=[0, 6], min_width=19):
         """
         Find start and end positions of continuous sequences of specified values at given y-levels in a 2D array,
         filtering for sequences that meet or exceed a specified minimum width.
@@ -100,11 +100,11 @@ def find_rail_sides(edges_dict):
                 right_border.append([max(xs)[1],y])
 
         # funkce outlieru zastavi na prvni nespojitosti -> delsi zona mela nespojitost na konci -> chci tu
-        left_border = robust_rail_sides(left_border) # filter outliers
+        left_border, flags_l = robust_rail_sides(left_border) # filter outliers
         
-        right_border = robust_rail_sides(right_border)
+        right_border, flags_r = robust_rail_sides(right_border)
         
-        return left_border, right_border
+        return left_border, right_border, flags_l, flags_r
 
 def robust_rail_sides(border, threshold=1.5):
         border = np.array(border)
@@ -115,8 +115,10 @@ def robust_rail_sides(border, threshold=1.5):
         threshold_step = np.abs(threshold*np.abs(median_step))
         treshold_overcommings = abs(steps_x) > abs(threshold_step)
         
+        flags = []
+        
         if True not in treshold_overcommings:
-                return border
+                return border, flags
         else:
                 overcommings_indices = [i for i, element in enumerate(treshold_overcommings) if element == True]
                 filtered_border = border
@@ -135,9 +137,12 @@ def robust_rail_sides(border, threshold=1.5):
                                 filtered_border = right_border
                                 previously_deleted.append([i,len(left_border)])
                         else:
-                                filtered_border = np.concatenate((robust_rail_sides(right_border),robust_rail_sides(left_border)), axis=0)
+                                right_b, _ = robust_rail_sides(right_border)
+                                left_b, _ = robust_rail_sides(left_border)
+                                filtered_border = np.concatenate((right_b,left_b), axis=0)
+                                flags.append(i)
                 
-                return filtered_border
+                return filtered_border, flags
 
 def find_dist_from_edges(image, edges_dict, left_border, right_border, real_life_width_mm, real_life_target_mm, mark_value=30):
         """
@@ -217,20 +222,28 @@ def bresenham_line(x0, y0, x1, y1):
 
         return line
 
-def interpolate_end_points(end_points_dict):
+def interpolate_end_points(end_points_dict, flags):
         line_arr = []
         ys = list(end_points_dict.keys())
         xs = list(end_points_dict.values())
+        
+        if flags and np.all(np.diff(flags) == 1):
+                flags = [flags[0]]
 
         for i in range(0, len(ys) - 1):
+                if i in flags:
+                        continue
                 y1, y2 = ys[i], ys[i + 1]
                 x1, x2 = xs[i], xs[i + 1]
                 line = bresenham_line(x1, y1, x2, y2)
                 line_arr = line_arr + line
+        
+        if line_arr == []:
+                print("jou")
                 
         return line_arr
 
-def extrapolate_line(pixels, image, min_y=None):
+def extrapolate_line(pixels, image, min_y=None, extr_pixels=5):
         """
         Extrapolate a line based on the last segment using linear regression.
 
@@ -243,7 +256,7 @@ def extrapolate_line(pixels, image, min_y=None):
         - A list of new extrapolated (x, y) pixel coordinates.
         """
         # Check if the pixel list is shorter than the window for regression
-        if len(pixels) < 10:
+        if len(pixels) < extr_pixels:
                 raise ValueError("Not enough pixels to perform extrapolation.")
 
         # Take the last 30 pixels for the regression
@@ -307,12 +320,12 @@ def find_zone_border(image, edges, irl_width_mm=1435, irl_target_mm=1000, lowest
         
         irl_width_mm = 1435
         
-        left_border, right_border = find_rail_sides(edges)
+        left_border, right_border, flags_l, flags_r = find_rail_sides(edges)
         
         dist_marked_id_map, end_points_left, end_points_right = find_dist_from_edges(image, edges, left_border, right_border, irl_width_mm, irl_target_mm+70) # 1 meter + 70mm rail width
         
-        border_l = interpolate_end_points(end_points_left)
-        border_r = interpolate_end_points(end_points_right)
+        border_l = interpolate_end_points(end_points_left, flags_l)
+        border_r = interpolate_end_points(end_points_right, flags_r)
         
         border_l, border_r = extrapolate_borders(dist_marked_id_map, border_l, border_r, lowest_y)
         
@@ -369,13 +382,13 @@ def detect(PATH_model, filename_img, PATH_jpgs):
         image = cv2.imread(os.path.join(PATH_jpgs, filename_img))
         results = model.predict(image)
 
-        return results
+        return results, model
 
 def manage_detections(results, model):
         names = model.model.names
         bbox = results[0].boxes.xyxy.tolist()
         cls = results[0].boxes.cls.tolist()
-        accepted_stationary = np.array([0,1,2,3,4,5,7,15,16,17,18,19,20,21,22,23,24,25,26,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,56,57,58,59,60,61,62,63,68,69,70,71,72,73,74,75,78,79])
+        accepted_stationary = np.array([24,25,26,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,56,57,58,59,60,61,62,63,68,69,70,71,72,73,74,75,78,79])
         accepted_moving = np.array([0,1,2,3,4,5,7,15,16,17,18,19,20,21,22,23])
         boxes_moving = {}
         boxes_stationary = {}
@@ -383,15 +396,24 @@ def manage_detections(results, model):
                 for xyxy, clss in zip(bbox, cls):
                         if clss in accepted_moving:
                                 if clss in boxes_moving.keys() and len(boxes_moving[clss]) > 0:
-                                        boxes_moving[clss] = boxes_moving[clss].append(xyxy)
+                                        boxes_moving[clss].append(xyxy)
                                 else:
-                                        boxes_moving[clss] = xyxy
+                                        boxes_moving[clss] = [xyxy]
                         if clss in accepted_stationary:
                                 if clss in boxes_stationary.keys() and len(boxes_stationary[clss]) > 0:
-                                        boxes_stationary[clss] = boxes_stationary[clss].append(xyxy)
+                                        boxes_stationary[clss].append(xyxy)
                                 else:
-                                        boxes_stationary[clss] = xyxy
+                                        boxes_stationary[clss] = [xyxy]
 
+        return boxes_moving, boxes_stationary
+
+def classify_detections(boxes_moving, boxes_stationary, borders):
+        
+        
+        print("jou")
+        
+        
+        
 vis = 1
 
 for filename_img in os.listdir(PATH_jpgs):
@@ -411,5 +433,5 @@ for filename_img in os.listdir(PATH_jpgs):
         
         # Detection
         results, model = detect(PATH_model_det, filename_img, PATH_jpgs)
-        detections = manage_detections(results, model)
+        boxes_moving, boxes_stationary = manage_detections(results, model)
         

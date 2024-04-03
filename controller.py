@@ -7,8 +7,8 @@ from ultralyticsplus import YOLO, render_result
 from test import load, process
 
 PATH_jpgs = 'RailNet_DT/rs19_val/jpgs/test'
-PATH_model = 'RailNet_DT/models/modelchp_85_100_0.0002865237576874738_2_0.606629.pth'
-
+PATH_model_seg = 'RailNet_DT/models/modelchp_85_100_0.0002865237576874738_2_0.606629.pth'
+PATH_model_det = 'ultralyticsplus/yolov8s'
 
 def find_extreme_y_values(arr, values=[0, 6]):
         """
@@ -138,7 +138,6 @@ def robust_rail_sides(border, threshold=1.5):
                                 filtered_border = np.concatenate((robust_rail_sides(right_border),robust_rail_sides(left_border)), axis=0)
                 
                 return filtered_border
-
 
 def find_dist_from_edges(image, edges_dict, left_border, right_border, real_life_width_mm, real_life_target_mm, mark_value=30):
         """
@@ -319,24 +318,18 @@ def find_zone_border(image, edges, irl_width_mm=1435, irl_target_mm=1000, lowest
         
         return [border_l, border_r]
 
-def visualize(id_map, border_1m, border_2m, border_3m):
-        for point in border_1m[0]:
-                id_map[point[1],point[0]] = 30
-        for point in border_1m[1]:
-                id_map[point[1],point[0]] = 30
-        for point in border_2m[0]:
-                id_map[point[1],point[0]] = 30
-        for point in border_2m[1]:
-                id_map[point[1],point[0]] = 30
-        for point in border_3m[0]:
-                id_map[point[1],point[0]] = 30
-        for point in border_3m[1]:
-                id_map[point[1],point[0]] = 30
-        
+def visualize(id_map, borders):
+        for border in borders:
+                for point in border[0]:
+                        id_map[point[1],point[0]] = 30
+                for point in border[1]:
+                        id_map[point[1],point[0]] = 30
         plt.imshow(id_map)
         plt.show()
 
-def get_clues(lowest, highest, number_of_clues):
+def get_clues(segmentation_mask, number_of_clues):
+        
+        lowest, highest = find_extreme_y_values(segmentation_mask)
         clue_step = int((highest - lowest) / number_of_clues+1)
         clues = []
         for i in range(number_of_clues):
@@ -344,28 +337,41 @@ def get_clues(lowest, highest, number_of_clues):
         
         return clues
 
-vis = 1
-
-for filename in os.listdir(PATH_jpgs):
+def border_handler(id_map, edges, target_distances, vis=False):
         
-        # Segmentation
-        image_size = [1024,1024]
-        image_norm, image, mask, _, model = load(filename, PATH_model, image_size)
-        model_type = "segformer" #deeplab
+        lowest, _ = find_extreme_y_values(segmentation_mask)
+        borders = []
+        for target in target_distances:
+                borders.append(find_zone_border(id_map, edges, irl_target_mm=target, lowest_y = lowest))
+                
+        if vis:
+                visualize(id_map, borders)
+                
+        return borders
+
+def segment(image_size, filename, PATH_jpgs, PATH_model, model_type):
+        
+        image_norm, image, mask, _, model = load(filename, PATH_jpgs, PATH_model, image_size)
         id_map = process(model, image_norm, mask, model_type)
         id_map = cv2.resize(id_map, [1920,1080], interpolation=cv2.INTER_NEAREST)
         
-        # Detection
-        model = YOLO('ultralyticsplus/yolov8s')
+        return id_map
+
+def detect(PATH_model, filename_img, PATH_jpgs):
+        
+        model = YOLO(PATH_model)
 
         model.overrides['conf'] = 0.25  # NMS confidence threshold
         model.overrides['iou'] = 0.45  # NMS IoU threshold
         model.overrides['agnostic_nms'] = False  # NMS class-agnostic
         model.overrides['max_det'] = 1000  # maximum number of detections per image
 
-        image = cv2.imread(os.path.join(PATH_jpgs, filename))
+        image = cv2.imread(os.path.join(PATH_jpgs, filename_img))
         results = model.predict(image)
 
+        return results
+
+def manage_detections(results, model):
         names = model.model.names
         bbox = results[0].boxes.xyxy.tolist()
         cls = results[0].boxes.cls.tolist()
@@ -386,17 +392,24 @@ for filename in os.listdir(PATH_jpgs):
                                 else:
                                         boxes_stationary[clss] = xyxy
 
-        lowest_y, highest_y = find_extreme_y_values(id_map)
+vis = 1
 
-        clues = get_clues(lowest_y, highest_y, 10)
+for filename_img in os.listdir(PATH_jpgs):
         
-        edges = find_edges(id_map, clues, min_width=int(id_map.shape[1]*0.015))
+        # Segmentation
+        image_size = [1024,1024]
+        model_type = "segformer" #deeplab
+        segmentation_mask = segment(image_size, filename_img, PATH_jpgs, PATH_model_seg, model_type)
+
+        # Border search
+        clues = get_clues(segmentation_mask, 10)
+        edges = find_edges(segmentation_mask, clues, min_width=int(segmentation_mask.shape[1]*0.015))
+        #id_map_marked = mark_edges(segmentation_mask, edges)
         
-        id_map_marked = mark_edges(id_map, edges)
+        target_distances = [1000,2000,3000]
+        borders = border_handler(segmentation_mask, edges, target_distances, vis=True)
         
-        border_1m = find_zone_border(id_map, edges, irl_target_mm=1000, lowest_y = lowest_y)
-        border_2m = find_zone_border(id_map, edges, irl_target_mm=2000, lowest_y = lowest_y)
-        border_3m = find_zone_border(id_map, edges, irl_target_mm=3000, lowest_y = lowest_y)
+        # Detection
+        results, model = detect(PATH_model_det, filename_img, PATH_jpgs)
+        detections = manage_detections(results, model)
         
-        if vis:
-                visualize(id_map, border_1m, border_2m, border_3m)

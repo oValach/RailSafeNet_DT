@@ -64,7 +64,7 @@ def find_edges(arr, y_levels, values=[0, 1, 6], min_width=19):
         
         return edges_dict
 
-def mark_edges(arr, edges_dict, mark_value):
+def mark_edges(arr, edges_dict, mark_value=30):
         """
         Marks a 5x5 zone around the edges found in the array with a specific value.
 
@@ -100,35 +100,47 @@ def find_rail_sides(edges_dict):
                 right_border.append([max(xs)[1],y])
 
         # funkce outlieru zastavi na prvni nespojitosti -> delsi zona mela nespojitost na konci -> chci tu
-        left_border_side1 = robust_rail_sides(left_border) # filter outliers
-        right_border_side1 = robust_rail_sides(right_border)
+        left_border = robust_rail_sides(left_border) # filter outliers
         
-        left_border_side2 = robust_rail_sides(left_border[::-1]) # filter outliers
-        right_border_side2 = robust_rail_sides(right_border[::-1])
-        
-        left_border = left_border_side1 if len(left_border_side1)>=len(left_border_side2) else left_border_side2
-        right_border = right_border_side1 if len(right_border_side1)>=len(right_border_side2) else right_border_side2
+        right_border = robust_rail_sides(right_border)
         
         return left_border, right_border
 
-def robust_rail_sides(border, threshold=3):
+def robust_rail_sides(border, threshold=1.5):
         border = np.array(border)
         
         steps_x = np.diff(border[:, 0])
         median_step = np.median(steps_x)
         
         threshold_step = np.abs(threshold*np.abs(median_step))
+        treshold_overcommings = abs(steps_x) > abs(threshold_step)
         
-        filtered_border = [border[0]]
-        for i in range(1,len(border)):
-                diff = np.abs((border[i][0]-border[i-1][0]))
-                if np.abs(diff) > threshold_step:
-                        break
-                else:
-                        filtered_border.append(border[i])
-        return filtered_border
+        if True not in treshold_overcommings:
+                return border
+        else:
+                overcommings_indices = [i for i, element in enumerate(treshold_overcommings) if element == True]
+                filtered_border = border
+                
+                previously_deleted = []
+                for i in overcommings_indices:
+                        for item in previously_deleted:
+                                if item[0] < i:
+                                        i -= item[1]
+                        left_border = filtered_border[i+1:]
+                        right_border = filtered_border[:i+1]
+                        if len(right_border)<2:
+                                filtered_border = left_border
+                                previously_deleted.append([i,len(right_border)])
+                        elif len(left_border)<2:
+                                filtered_border = right_border
+                                previously_deleted.append([i,len(left_border)])
+                        else:
+                                filtered_border = np.concatenate((robust_rail_sides(right_border),robust_rail_sides(left_border)), axis=0)
+                
+                return filtered_border
 
-def find_dist_from_edges(image, edges_dict, real_life_width_mm, real_life_target_mm, mark_value=30):
+
+def find_dist_from_edges(image, edges_dict, left_border, right_border, real_life_width_mm, real_life_target_mm, mark_value=30):
         """
         Mark regions representing a real-life distance (e.g., 2 meters) to the left and right from the furthest edges.
         
@@ -148,30 +160,36 @@ def find_dist_from_edges(image, edges_dict, real_life_width_mm, real_life_target
         # Converting the real-life target distance to pixels
         target_distances_px = {k: int(real_life_target_mm / v) for k, v in scale_factors.items()}
 
+        mark=1
+        
         # Mark the regions representing the target distance to the left and right from the furthest edges
         end_points_left = {}
-        end_points_right = {}
-        for y, edge_list in edges_dict.items():
-                min_edge = min(edge_list)[0]
-                max_edge = max(edge_list)[1]
+        for point in left_border:
+                min_edge = point[0]
                 
                 # Ensure we stay within the image bounds
-                left_mark_start = max(0, min_edge - int(target_distances_px[y]))
+                left_mark_start = max(0, min_edge - int(target_distances_px[point[1]]))
                 if left_mark_start != 0:
-                        end_points_left[y] = left_mark_start
-                right_mark_end = min(image.shape[1], max_edge + int(target_distances_px[y]))
-                if right_mark_end != image.shape[1]:
-                        end_points_right[y] = right_mark_end
+                        end_points_left[point[1]] = left_mark_start
                 
-                mark=1
                 if mark:
                         # Mark the left region
                         if left_mark_start < min_edge:
-                                image[y, left_mark_start:min_edge] = mark_value
-                        
+                                image[point[1], left_mark_start:min_edge] = mark_value
+        
+        end_points_right = {}
+        for point in right_border:
+                max_edge = point[0]
+                
+                # Ensure we stay within the image bounds
+                right_mark_end = min(image.shape[1], max_edge + int(target_distances_px[point[1]]))
+                if right_mark_end != image.shape[1]:
+                        end_points_right[point[1]] = right_mark_end
+                
+                if mark:
                         # Mark the right region
                         if max_edge < right_mark_end:
-                                image[y, max_edge:right_mark_end] = mark_value
+                                image[point[1], max_edge:right_mark_end] = mark_value
 
         return image, end_points_left, end_points_right
 
@@ -290,9 +308,9 @@ def find_zone_border(image, edges, irl_width_mm=1435, irl_target_mm=1000, lowest
         
         irl_width_mm = 1435
         
-        rail_sides = find_rail_sides(edges)
+        left_border, right_border = find_rail_sides(edges)
         
-        dist_marked_id_map, end_points_left, end_points_right = find_dist_from_edges(image, edges, irl_width_mm, irl_target_mm+70) # 1 meter + 70mm rail width
+        dist_marked_id_map, end_points_left, end_points_right = find_dist_from_edges(image, edges, left_border, right_border, irl_width_mm, irl_target_mm+70) # 1 meter + 70mm rail width
         
         border_l = interpolate_end_points(end_points_left)
         border_r = interpolate_end_points(end_points_right)
@@ -316,6 +334,7 @@ def visualize(id_map, border_1m, border_2m, border_3m):
                 id_map[point[1],point[0]] = 30
         
         plt.imshow(id_map)
+        plt.show()
 
 def get_clues(lowest, highest, number_of_clues):
         clue_step = int((highest - lowest) / number_of_clues+1)
@@ -324,7 +343,9 @@ def get_clues(lowest, highest, number_of_clues):
                 clues.append(highest - (i*clue_step))
         
         return clues
+
 vis = 1
+
 for filename in os.listdir(PATH_jpgs):
         
         # Segmentation
@@ -369,9 +390,9 @@ for filename in os.listdir(PATH_jpgs):
 
         clues = get_clues(lowest_y, highest_y, 10)
         
-        edges = find_edges(id_map, clues, min_width=int(id_map.shape[1]*0.02))
+        edges = find_edges(id_map, clues, min_width=int(id_map.shape[1]*0.015))
         
-        id_map_marked = mark_edges(id_map, edges, 30)
+        id_map_marked = mark_edges(id_map, edges)
         
         border_1m = find_zone_border(id_map, edges, irl_target_mm=1000, lowest_y = lowest_y)
         border_2m = find_zone_border(id_map, edges, irl_target_mm=2000, lowest_y = lowest_y)

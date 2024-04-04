@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from collections import defaultdict
 import matplotlib.path as mplPath
+from matplotlib.path import Path
+import matplotlib.patches as patches
 from ultralyticsplus import YOLO
 from test import load, process
 
@@ -241,7 +243,7 @@ def interpolate_end_points(end_points_dict, flags):
                 line_arr = line_arr + line
         
         if line_arr == []:
-                print("jou")
+                print("line_arr was empty when interpolating")
                 
         return line_arr
 
@@ -309,12 +311,12 @@ def extrapolate_borders(dist_marked_id_map, border_l, border_r, lowest_y):
         border_extrapolation_l1 = extrapolate_line(border_l, dist_marked_id_map, lowest_y)
         border_extrapolation_l2 = extrapolate_line(border_l[::-1], dist_marked_id_map, lowest_y)
         
-        border_l = border_l + border_extrapolation_l1 + border_extrapolation_l2
+        border_l = border_extrapolation_l2[::-1] + border_l + border_extrapolation_l1
         
         border_extrapolation_r1 = extrapolate_line(border_r, dist_marked_id_map, lowest_y)
         border_extrapolation_r2 = extrapolate_line(border_r[::-1], dist_marked_id_map, lowest_y)
         
-        border_r = border_r + border_extrapolation_r1 + border_extrapolation_r2
+        border_r = border_extrapolation_r2[::-1] + border_r + border_extrapolation_r1
         
         return border_l, border_r
 
@@ -384,7 +386,7 @@ def detect(PATH_model, filename_img, PATH_jpgs):
         image = cv2.imread(os.path.join(PATH_jpgs, filename_img))
         results = model.predict(image)
 
-        return results, model
+        return results, model, image
 
 def manage_detections(results, model):
         names = model.model.names
@@ -409,12 +411,13 @@ def manage_detections(results, model):
 
         return boxes_moving, boxes_stationary
 
-def classify_detections(boxes_moving, boxes_stationary, borders):
+def classify_detections(boxes_moving, boxes_stationary, borders, image):
         
         colors = ["red","orange","yellow","green","blue"]
         
-        borders_extremes = []        
-        for border in borders:
+        borders_extremes = []
+        border_endpoints = []
+        for i,border in enumerate(borders):
                 border_l = np.array(border[0])
                 max_l_x = np.max(border_l[:, 0])
                 max_l_y = np.max(border_l[:, 1])
@@ -427,9 +430,15 @@ def classify_detections(boxes_moving, boxes_stationary, borders):
                 max_p_y = np.max(border_r[:, 1])
                 min_p_x = np.min(border_r[:, 0])
                 min_p_y = np.min(border_r[:, 1])
-                borders_extremes.append([[max_l_x,max_l_y],[min_l_x,min_l_y],[max_p_x,max_p_y],[min_p_x,min_p_y]])
                 endpoints_r = [border_r[0],border_r[-1]]
                 
+                interpolated_bottom = bresenham_line(endpoints_l[0][0],endpoints_l[0][1],endpoints_r[0][0],endpoints_r[0][1])
+                interpolated_top = bresenham_line(endpoints_l[1][0],endpoints_l[1][1],endpoints_r[1][0],endpoints_r[1][1])
+                borders[i].append(interpolated_bottom)
+                borders[i].append(interpolated_top)
+                
+                borders_extremes.append([[max_l_x,max_l_y],[min_l_x,min_l_y],[max_p_x,max_p_y],[min_p_x,min_p_y]])
+                border_endpoints.append([endpoints_l,endpoints_r])
         
         boxes_moving_info = []
         boxes_stationary_info = []
@@ -445,10 +454,40 @@ def classify_detections(boxes_moving, boxes_stationary, borders):
                                         center_point_x = x + ((xx-x)/2)
                                         center_point_y = y + ((yy-y)/2)
                                         
-                                        
+                                        complete_border = []
+                                        criticality = -1
+                                        color = None
+                                        for i,border in enumerate(borders):
+                                                complete_border = border[0]+border[1]+border[2]+border[3]
+                                                instance_border_path = mplPath.Path(np.array(complete_border))
+                                                is_inside_borders = instance_border_path.contains_point((center_point_x,center_point_y))
+                                                
+                                                if is_inside_borders:
+                                                        criticality = i
+                                                        color = colors[i]
+                                                
+                                        boxes_moving_info.append([item, criticality, color, [center_point_x, center_point_y]])
                                                 
                 if boxes_stationary:
-                        print("jou")
+                        for item, coords in boxes_stationary.items():
+                                for coord in coords:
+                                        x = coord[0]
+                                        y = coord[1]
+                                        xx = coord[2]
+                                        yy = coord[3]
+                                        center_point_x = x + ((xx-x)/2)
+                                        center_point_y = y + ((yy-y)/2)
+                                        
+                                        complete_border = []
+                                        criticality = -1
+                                        color = None
+                                        is_inside_borders = 0
+                                        for i,border in enumerate(borders):
+                                                complete_border = border[0]+border[1]+border[2]+border[3]
+                                                instance_border_path = mplPath.Path(np.array(complete_border))
+                                                is_inside_borders = instance_border_path.contains_point((center_point_x,center_point_y))
+                                                
+                                        boxes_stationary_info.append([item, criticality, color, [center_point_x, center_point_y]])
                 
         else:
                 print("No accepted detections in this image.")
@@ -470,12 +509,11 @@ for filename_img in os.listdir(PATH_jpgs):
         edges = find_edges(segmentation_mask, clues, min_width=int(segmentation_mask.shape[1]*0.015))
         #id_map_marked = mark_edges(segmentation_mask, edges)
         
-        target_distances = [1000,2000,3000]
+        target_distances = [100,200,300]
         borders = border_handler(segmentation_mask, edges, target_distances, vis=True)
         
         # Detection
-        results, model = detect(PATH_model_det, filename_img, PATH_jpgs)
+        results, model, image = detect(PATH_model_det, filename_img, PATH_jpgs)
         boxes_moving, boxes_stationary = manage_detections(results, model)
         
-        classification = classify_detections(boxes_moving, boxes_stationary, borders)
-        
+        classification = classify_detections(boxes_moving, boxes_stationary, borders, image)

@@ -1,5 +1,6 @@
 import cv2
 import os
+import time
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
@@ -174,7 +175,7 @@ def find_dist_from_edges(image, edges_dict, left_border, right_border, real_life
         - A NumPy array with the marked regions.
         """
         # Calculate the rail widths
-        #diffs_width = {k: sum(e-s for s, e in v) / len(v) for k, v in edges_dict.items() if v}
+        diffs_widths = {k: sum(e-s for s, e in v) / len(v) for k, v in edges_dict.items() if v}
         diffs_width = {k: max(e-s for s, e in v) for k, v in edges_dict.items() if v}
 
         # Pixel to mm scale factor
@@ -295,9 +296,17 @@ def extrapolate_line(pixels, image, min_y=None, extr_pixels=30):
         
         # Calculate direction based on last two pixels
         dx, dy = 0, 0  # Default values
-        x_diff = pixels[-1][0] - pixels[-2][0]
-        y_diff = pixels[-1][1] - pixels[-2][1]
-        if abs(x_diff) >= abs(y_diff):
+        
+        x_diffs = []
+        y_diffs = []
+        for i in range(1,extr_pixels-1):
+                x_diffs.append(pixels[-i][0] - pixels[-(i+1)][0])
+                y_diffs.append(pixels[-i][1] - pixels[-(i+1)][1])
+                
+        x_diff = x_diffs[np.argmax(np.abs(x_diffs))]
+        y_diff = y_diffs[np.argmax(np.abs(y_diffs))]
+        
+        if abs(int(x_diff)) >= abs(int(y_diff)):
                 dx = 1 if x_diff >= 0 else -1
         else:
                 dy = 1 if y_diff >= 0 else -1
@@ -384,11 +393,9 @@ def border_handler(id_map, edges, target_distances, vis=False):
         return borders
 
 def segment(image_size, filename, PATH_jpgs, PATH_model, model_type):
-        
-        image_norm, image, mask, _, model = load(filename, PATH_jpgs, PATH_model, image_size)
+        image_norm, _, mask, _, model = load(filename, PATH_jpgs, PATH_model, image_size)
         id_map = process(model, image_norm, mask, model_type)
         id_map = cv2.resize(id_map, [1920,1080], interpolation=cv2.INTER_NEAREST)
-        
         return id_map
 
 def detect(PATH_model, filename_img, PATH_jpgs):
@@ -516,7 +523,7 @@ vis = 1
 
 for filename_img in os.listdir(PATH_jpgs):
         
-        filename_img = "rs07651.jpg"
+        #filename_img = "rs07650.jpg"
         
         # Segmentation
         image_size = [1024,1024]
@@ -525,9 +532,9 @@ for filename_img in os.listdir(PATH_jpgs):
         print(filename_img)
 
         # Border search
-        clues = get_clues(segmentation_mask, 15)
+        clues = get_clues(segmentation_mask, 10)
         edges = find_edges(segmentation_mask, clues, min_width=int(segmentation_mask.shape[1]*0.02))
-        #id_map_marked = mark_edges(segmentation_mask, edges)
+        id_map_marked = mark_edges(segmentation_mask, edges)
         
         target_distances = [500,1000,1500]
         borders = border_handler(segmentation_mask, edges, target_distances, vis=True)

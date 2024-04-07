@@ -104,14 +104,17 @@ def find_rail_sides(edges_dict):
                 right_border.append([max(xs)[1],y])
 
         # funkce outlieru zastavi na prvni nespojitosti -> delsi zona mela nespojitost na konci -> chci tu
-        left_border, flags_l = robust_rail_sides(left_border) # filter outliers
-        
-        right_border, flags_r = robust_rail_sides(right_border)
+        left_border, flags_l, _ = robust_rail_sides(left_border) # filter outliers
+        right_border, flags_r, _ = robust_rail_sides(right_border)
         
         return left_border, right_border, flags_l, flags_r
 
-def robust_rail_sides(border, threshold=1.5):
+def robust_rail_sides(border, threshold=6):
         border = np.array(border)
+        
+        # delete borders found on the bottom side of the image
+        border = border[border[:, 1] != 1079]
+        
         
         steps_x = np.diff(border[:, 0])
         median_step = np.median(steps_x)
@@ -122,9 +125,12 @@ def robust_rail_sides(border, threshold=1.5):
         flags = []
         
         if True not in treshold_overcommings:
-                return border, flags
+                return border, flags, []
         else:
                 overcommings_indices = [i for i, element in enumerate(treshold_overcommings) if element == True]
+                if overcommings_indices and np.all(np.diff(overcommings_indices) == 1):
+                        overcommings_indices = [overcommings_indices[0]]
+                
                 filtered_border = border
                 
                 previously_deleted = []
@@ -132,21 +138,27 @@ def robust_rail_sides(border, threshold=1.5):
                         for item in previously_deleted:
                                 if item[0] < i:
                                         i -= item[1]
-                        left_border = filtered_border[i+1:]
-                        right_border = filtered_border[:i+1]
-                        if len(right_border)<2:
-                                filtered_border = left_border
-                                previously_deleted.append([i,len(right_border)])
-                        elif len(left_border)<2:
-                                filtered_border = right_border
-                                previously_deleted.append([i,len(left_border)])
+                        first_part = filtered_border[:i+1]
+                        second_part = filtered_border[i+1:]
+                        if len(second_part)<2:
+                                filtered_border = first_part
+                                previously_deleted.append([i,len(second_part)])
+                        elif len(first_part)<2:
+                                filtered_border = second_part
+                                previously_deleted.append([i,len(first_part)])
                         else:
-                                right_b, _ = robust_rail_sides(right_border)
-                                left_b, _ = robust_rail_sides(left_border)
-                                filtered_border = np.concatenate((right_b,left_b), axis=0)
+                                first_b, _, deleted_first = robust_rail_sides(first_part)
+                                second_b, _, _ = robust_rail_sides(second_part)
+                                filtered_border = np.concatenate((first_b,second_b), axis=0)
+                                
+                                if deleted_first:
+                                        for deleted_item in deleted_first:
+                                                if deleted_item[0]<=i:
+                                                        i -= deleted_item[1]
+                                        
                                 flags.append(i)
                 
-                return filtered_border, flags
+                return filtered_border, flags, previously_deleted
 
 def find_dist_from_edges(image, edges_dict, left_border, right_border, real_life_width_mm, real_life_target_mm, mark_value=30):
         """
@@ -161,10 +173,12 @@ def find_dist_from_edges(image, edges_dict, left_border, right_border, real_life
         Returns:
         - A NumPy array with the marked regions.
         """
-        # Calculate the average sequence width in pixels
-        average_diffs = {k: sum(e-s for s, e in v) / len(v) for k, v in edges_dict.items() if v}
+        # Calculate the rail widths
+        #diffs_width = {k: sum(e-s for s, e in v) / len(v) for k, v in edges_dict.items() if v}
+        diffs_width = {k: max(e-s for s, e in v) for k, v in edges_dict.items() if v}
+
         # Pixel to mm scale factor
-        scale_factors = {k: real_life_width_mm / v for k, v in average_diffs.items()}
+        scale_factors = {k: real_life_width_mm / v for k, v in diffs_width.items()}
         # Converting the real-life target distance to pixels
         target_distances_px = {k: int(real_life_target_mm / v) for k, v in scale_factors.items()}
 
@@ -176,9 +190,9 @@ def find_dist_from_edges(image, edges_dict, left_border, right_border, real_life
                 min_edge = point[0]
                 
                 # Ensure we stay within the image bounds
-                left_mark_start = max(0, min_edge - int(target_distances_px[point[1]]))
-                if left_mark_start != 0:
-                        end_points_left[point[1]] = left_mark_start
+                #left_mark_start = max(0, min_edge - int(target_distances_px[point[1]]))
+                left_mark_start = min_edge - int(target_distances_px[point[1]])
+                end_points_left[point[1]] = left_mark_start
                 
                 if mark:
                         # Mark the left region
@@ -231,78 +245,82 @@ def interpolate_end_points(end_points_dict, flags):
         ys = list(end_points_dict.keys())
         xs = list(end_points_dict.values())
         
-        if flags and np.all(np.diff(flags) == 1):
+        if flags and len(flags) == 1:
+                pass
+        elif flags and np.all(np.diff(flags) == 1):
                 flags = [flags[0]]
-
+                
         for i in range(0, len(ys) - 1):
                 if i in flags:
                         continue
                 y1, y2 = ys[i], ys[i + 1]
                 x1, x2 = xs[i], xs[i + 1]
-                line = bresenham_line(x1, y1, x2, y2)
-                line_arr = line_arr + line
+                line = np.array(bresenham_line(x1, y1, x2, y2))
+                if np.any(line[:, 0] < 0):
+                        line = line[line[:, 0] > 0]
+                line_arr = line_arr + list(line)
         
         if line_arr == []:
                 print("line_arr was empty when interpolating")
                 
         return line_arr
 
-def extrapolate_line(pixels, image, min_y=None, extr_pixels=5):
+def extrapolate_line(pixels, image, min_y=None, extr_pixels=30):
         """
         Extrapolate a line based on the last segment using linear regression.
-
+        
         Parameters:
         - pixels: List of (x, y) tuples representing line pixel coordinates.
         - image: 2D numpy array representing the image.
-        - max_y: Maximum y-value to extrapolate to (optional).
-
+        - min_y: Minimum y-value to extrapolate to (optional).
+        
         Returns:
         - A list of new extrapolated (x, y) pixel coordinates.
         """
-        # Check if the pixel list is shorter than the window for regression
         if len(pixels) < extr_pixels:
                 raise ValueError("Not enough pixels to perform extrapolation.")
 
-        # Take the last 30 pixels for the regression
-        recent_pixels = np.array(pixels[-30:])
+        recent_pixels = np.array(pixels[-extr_pixels:])
         
-        # Prepare data for regression
         X = recent_pixels[:, 0].reshape(-1, 1)  # Reshape for sklearn
         y = recent_pixels[:, 1]
-
-        # Fit the linear regression
+        
         model = LinearRegression()
         model.fit(X, y)
-
-        # Get the coefficients
+        
         slope = model.coef_[0]
         intercept = model.intercept_
 
-        # Define the extrapolation function
         extrapolate = lambda x: slope * x + intercept
+        
+        # Calculate direction based on last two pixels
+        dx, dy = 0, 0  # Default values
+        x_diff = pixels[-1][0] - pixels[-2][0]
+        y_diff = pixels[-1][1] - pixels[-2][1]
+        if abs(x_diff) >= abs(y_diff):
+                dx = 1 if x_diff >= 0 else -1
+        else:
+                dy = 1 if y_diff >= 0 else -1
 
-        # Initialize with the last known pixel
         last_pixel = pixels[-1]
         new_pixels = []
         x, y = last_pixel
 
-        # Calculate the direction for extrapolation
-        dx = 1 if pixels[-1][0] - pixels[-2][0] > 0 else -1
-
-        # Minimum y limit is either the provided min_y or the height of the image
         min_y = min_y if min_y is not None else image.shape[0] - 1
-
-        # Extrapolate until we hit the min y limit or the border of the image
-        while 0 <= x < image.shape[1] and min_y < y < image.shape[0]:
-                x += dx
-                y = int(extrapolate(x))
-                
-                # Check bounds
-                if 0 <= y < image.shape[0]:
-                        if 0 <= x < image.shape[1]:
-                                new_pixels.append((x, y))
+        
+        while 0 <= x < image.shape[1] and min_y <= y < image.shape[0]:
+                if dx != 0:  # Horizontal or diagonal movement
+                        x += dx
+                        y = int(extrapolate(x))
+                elif dy != 0:  # Vertical movement
+                        y += dy
+                        # For vertical lines, approximate x based on the last known value
+                        x = int(x)
+                        
+                if 0 <= y < image.shape[0] and 0 <= x < image.shape[1]:
+                        new_pixels.append((x, y))
                 else:
-                        break  # Stop if we go outside the image bounds
+                        break
 
         return new_pixels
 
@@ -311,11 +329,10 @@ def extrapolate_borders(dist_marked_id_map, border_l, border_r, lowest_y):
         border_extrapolation_l1 = extrapolate_line(border_l, dist_marked_id_map, lowest_y)
         border_extrapolation_l2 = extrapolate_line(border_l[::-1], dist_marked_id_map, lowest_y)
         
-        border_l = border_extrapolation_l2[::-1] + border_l + border_extrapolation_l1
-        
         border_extrapolation_r1 = extrapolate_line(border_r, dist_marked_id_map, lowest_y)
         border_extrapolation_r2 = extrapolate_line(border_r[::-1], dist_marked_id_map, lowest_y)
         
+        border_l = border_extrapolation_l2[::-1] + border_l + border_extrapolation_l1
         border_r = border_extrapolation_r2[::-1] + border_r + border_extrapolation_r1
         
         return border_l, border_r
@@ -488,28 +505,31 @@ def classify_detections(boxes_moving, boxes_stationary, borders, image):
                                                 is_inside_borders = instance_border_path.contains_point((center_point_x,center_point_y))
                                                 
                                         boxes_stationary_info.append([item, criticality, color, [center_point_x, center_point_y]])
-                
+        
+                return boxes_moving_info, boxes_stationary_info
+        
         else:
                 print("No accepted detections in this image.")
                 return
-        
-        print("jou")
 
 vis = 1
 
 for filename_img in os.listdir(PATH_jpgs):
         
+        filename_img = "rs07651.jpg"
+        
         # Segmentation
         image_size = [1024,1024]
         model_type = "segformer" #deeplab
         segmentation_mask = segment(image_size, filename_img, PATH_jpgs, PATH_model_seg, model_type)
+        print(filename_img)
 
         # Border search
-        clues = get_clues(segmentation_mask, 10)
-        edges = find_edges(segmentation_mask, clues, min_width=int(segmentation_mask.shape[1]*0.015))
+        clues = get_clues(segmentation_mask, 15)
+        edges = find_edges(segmentation_mask, clues, min_width=int(segmentation_mask.shape[1]*0.02))
         #id_map_marked = mark_edges(segmentation_mask, edges)
         
-        target_distances = [100,200,300]
+        target_distances = [500,1000,1500]
         borders = border_handler(segmentation_mask, edges, target_distances, vis=True)
         
         # Detection

@@ -64,10 +64,27 @@ def find_edges(arr, y_levels, values=[0, 6], min_width=19):
                 filtered_edges = [(start, end) for start, end in filtered_edges if 0 not in (start, end) and 1919 not in (start, end)]
                 
                 edges_dict[y] = filtered_edges
-
+                
         edges_dict = {k: v for k, v in edges_dict.items() if v}
         
         return edges_dict
+
+def find_rails(arr, y_levels, values=[9, 10], min_width=5):
+        edges_all = []
+        for y in y_levels:
+                row = arr[y, :]
+                mask = np.isin(row, values).astype(int)
+                padded_mask = np.pad(mask, (1, 1), 'constant', constant_values=0)
+                diff = np.diff(padded_mask)
+                starts = np.where(diff == 1)[0]
+                ends = np.where(diff == -1)[0] - 1
+
+                # Filter sequences based on the minimum width criteria
+                filtered_edges = [(start, end) for start, end in zip(starts, ends) if end - start + 1 >= min_width]
+                filtered_edges = [(start, end) for start, end in filtered_edges if 0 not in (start, end) and 1919 not in (start, end)]
+                edges_all = filtered_edges
+        
+        return edges_all
 
 def mark_edges(arr, edges_dict, mark_value=30):
         """
@@ -97,13 +114,23 @@ def mark_edges(arr, edges_dict, mark_value=30):
 
         return marked_arr
 
-def find_rail_sides(edges_dict):
+def find_rail_sides(img, edges_dict):
         left_border = []
         right_border = []
         for y,xs in edges_dict.items():
-                left_border.append([min(xs)[0],y])
-                right_border.append([max(xs)[1],y])
-
+                rails = find_rails(img, [y], values=[9,10], min_width=5)
+                left_border_actual = [min(xs)[0],y]
+                right_border_actual = [max(xs)[1],y]                        
+                
+                for zone in rails:
+                        if abs(zone[1]-left_border_actual[0]) < 50:
+                                left_border_actual[0] = zone[0]
+                        if abs(zone[0]-right_border_actual[0]) < 50:
+                                right_border_actual[0] = zone[1]
+                
+                left_border.append(left_border_actual)
+                right_border.append(right_border_actual)
+        
         # funkce outlieru zastavi na prvni nespojitosti -> delsi zona mela nespojitost na konci -> chci tu
         left_border, flags_l, _ = robust_rail_sides(left_border) # filter outliers
         right_border, flags_r, _ = robust_rail_sides(right_border)
@@ -350,9 +377,9 @@ def find_zone_border(image, edges, irl_width_mm=1435, irl_target_mm=1000, lowest
         
         irl_width_mm = 1435
         
-        left_border, right_border, flags_l, flags_r = find_rail_sides(edges)
+        left_border, right_border, flags_l, flags_r = find_rail_sides(image, edges)
         
-        dist_marked_id_map, end_points_left, end_points_right = find_dist_from_edges(image, edges, left_border, right_border, irl_width_mm, irl_target_mm+70) # 1 meter + 70mm rail width
+        dist_marked_id_map, end_points_left, end_points_right = find_dist_from_edges(image, edges, left_border, right_border, irl_width_mm, irl_target_mm)
         
         border_l = interpolate_end_points(end_points_left, flags_l)
         border_r = interpolate_end_points(end_points_right, flags_r)
@@ -523,7 +550,7 @@ vis = 1
 
 for filename_img in os.listdir(PATH_jpgs):
         
-        #filename_img = "rs07650.jpg"
+        #filename_img = "rs07651.jpg"
         
         # Segmentation
         image_size = [1024,1024]

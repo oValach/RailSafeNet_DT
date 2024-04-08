@@ -406,7 +406,7 @@ def get_clues(segmentation_mask, number_of_clues):
 
 def border_handler(id_map, edges, target_distances, vis=False):
         
-        lowest, _ = find_extreme_y_values(segmentation_mask)
+        lowest, _ = find_extreme_y_values(id_map)
         borders = []
         for target in target_distances:
                 borders.append(find_zone_border(id_map, edges, irl_target_mm=target, lowest_y = lowest))
@@ -415,9 +415,6 @@ def border_handler(id_map, edges, target_distances, vis=False):
                                 id_map[point[1],point[0]] = 30
                         for point in border[1]:
                                 id_map[point[1],point[0]] = 30
-        if vis:
-                plt.imshow(id_map)
-                plt.show()
                 
         return borders, id_map
 
@@ -497,6 +494,7 @@ def classify_detections(boxes_moving, boxes_stationary, borders, img_dims):
                 border_endpoints.append([endpoints_l,endpoints_r])
         
         boxes_info = []
+        #boxes_moving[0.0].append([600,400,30,80])
         
         if boxes_moving or boxes_stationary:
                 if boxes_moving:
@@ -510,7 +508,7 @@ def classify_detections(boxes_moving, boxes_stationary, borders, img_dims):
                                         complete_border = []
                                         criticality = -1
                                         color = None
-                                        for i,border in enumerate(reversed(borders), start=len(borders) - 1):
+                                        for i,border in enumerate(reversed(borders)):
                                                 complete_border = border[0]+border[1]+border[2]+border[3]
                                                 instance_border_path = mplPath.Path(np.array(complete_border))
                                                 is_inside_borders = instance_border_path.contains_point((x,y))
@@ -536,7 +534,7 @@ def classify_detections(boxes_moving, boxes_stationary, borders, img_dims):
                                         criticality = -1
                                         color = None
                                         is_inside_borders = 0
-                                        for i,border in enumerate(borders):
+                                        for i,border in enumerate(reversed(borders), start=len(borders) - 1):
                                                 complete_border = border[0]+border[1]+border[2]+border[3]
                                                 instance_border_path = mplPath.Path(np.array(complete_border))
                                                 is_inside_borders = instance_border_path.contains_point((x,y))
@@ -556,7 +554,7 @@ def classify_detections(boxes_moving, boxes_stationary, borders, img_dims):
                 print("No accepted detections in this image.")
                 return
 
-def show_classification(classification, id_map, names):
+def draw_classification(classification, id_map):
         
         if classification:
                 for box in classification:
@@ -569,9 +567,12 @@ def show_classification(classification, id_map, names):
                         y_end = int(min(y + 3, id_map.shape[0]))
                         
                         id_map[y_start:y_end, x_start:x_end] = mark_value
-                
-                plt.imshow(id_map)
+        else:
+                return
 
+def show_result(classification, id_map, names):
+        if classification:
+                plt.imshow(id_map)
                 for box in classification:
                         x,y = box[3]
                         name = names[box[0]]
@@ -581,34 +582,18 @@ def show_classification(classification, id_map, names):
                 plt.show()
         else:
                 return
-        
-vis = 0
 
-#for filename_img in os.listdir(PATH_jpgs):
-for item in enumerate(data_json["data"]):
-        
-        filepath_img = item[1][1]["path"]
-        filepath_img = 'media/images/44aabd7ea3e4a32e034f/frame_132280.png'
-        #filename_img = "rs07718.jpg" #rs07659 55
-        # segmentace ok - frame_121440.png,frame_121560.png,frame_123320.png,frame_125400.png,frame_127000.png,frame_128040.png
-        
-        # Segmentation
-        image_size = [1024,1024]
-        model_type = "segformer" #deeplab
-        dataset_type = 'pilsen' #railsem19
-        if dataset_type == 'pilsen':
-                PATH_jpgs = PATH_base
-        
+def run(image_size, filepath_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=False, item=None):
+
         segmentation_mask = segment(image_size, filepath_img, PATH_jpgs, PATH_model_seg, dataset_type, item)
         print('File: {}'.format(filepath_img))
-
+        
         # Border search
         clues = get_clues(segmentation_mask, 10)
         #edges = find_edges(segmentation_mask, clues, min_width=int(segmentation_mask.shape[1]*0.02))
         edges = find_edges(segmentation_mask, clues, min_width=0)
-        id_map_marked = mark_edges(segmentation_mask, edges)
+        #id_map_marked = mark_edges(segmentation_mask, edges)
         
-        target_distances = [500,1000,3000]
         borders, id_map = border_handler(segmentation_mask, edges, target_distances, vis=vis)
         
         # Detection
@@ -617,4 +602,27 @@ for item in enumerate(data_json["data"]):
         
         classification = classify_detections(boxes_moving, boxes_stationary, borders, image.shape)
         
-        show_classification(classification, id_map, model.names)
+        draw_classification(classification, id_map)
+        if vis:
+                show_result(classification, id_map, model.names)
+        
+
+if __name__ == "__main__":
+
+        dataset_type = 'pilsen' #railsem19
+        vis = True
+        image_size = [1024,1024]
+        model_type = "segformer" #deeplab
+        target_distances = [500,1000,5000]
+        
+        if dataset_type == 'pilsen':
+                for item in enumerate(data_json["data"]):
+                        filepath_img = item[1][1]["path"]
+                        #filepath_img = 'media/images/44aabd7ea3e4a32e034f/frame_132280.png'
+                        # segmentace - frame_121440.png,frame_121560.png,frame_123320.png,frame_125400.png,frame_127000.png,frame_128040.png
+                        run(image_size, filepath_img, PATH_base, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=vis, item=item)
+        else:
+                for filename_img in os.listdir(PATH_jpgs):
+                        # filename_img = "rs07718.jpg" #rs07659 55
+                        run(image_size, filename_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=vis, item=None)
+                        

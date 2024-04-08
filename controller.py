@@ -1,6 +1,7 @@
 import cv2
 import os
 import time
+import json
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
@@ -14,6 +15,9 @@ from test import load, process
 PATH_jpgs = 'RailNet_DT/rs19_val/jpgs/test'
 PATH_model_seg = 'RailNet_DT/models/modelchp_85_100_0.0002865237576874738_2_0.606629.pth'
 PATH_model_det = 'ultralyticsplus/yolov8s'
+PATH_base = 'RailNet_DT/railway_dataset/'
+eda_path = "RailNet_DT/railway_dataset/eda_table.table.json"
+data_json = json.load(open(eda_path, 'r'))
 
 def find_extreme_y_values(arr, values=[0, 6]):
         """
@@ -137,7 +141,7 @@ def find_rail_sides(img, edges_dict):
         
         return left_border, right_border, flags_l, flags_r
 
-def robust_rail_sides(border, threshold=6):
+def robust_rail_sides(border, threshold=20):
         border = np.array(border)
         
         # delete borders found on the bottom side of the image
@@ -277,7 +281,7 @@ def interpolate_end_points(end_points_dict, flags):
                 pass
         elif flags and np.all(np.diff(flags) == 1):
                 flags = [flags[0]]
-                
+        
         for i in range(0, len(ys) - 1):
                 if i in flags:
                         continue
@@ -290,10 +294,10 @@ def interpolate_end_points(end_points_dict, flags):
         
         if line_arr == []:
                 print("line_arr was empty when interpolating")
-                
+        
         return line_arr
 
-def extrapolate_line(pixels, image, min_y=None, extr_pixels=30):
+def extrapolate_line(pixels, image, min_y=None, extr_pixels=10):
         """
         Extrapolate a line based on the last segment using linear regression.
         
@@ -306,7 +310,8 @@ def extrapolate_line(pixels, image, min_y=None, extr_pixels=30):
         - A list of new extrapolated (x, y) pixel coordinates.
         """
         if len(pixels) < extr_pixels:
-                raise ValueError("Not enough pixels to perform extrapolation.")
+                print("Not enough pixels to perform extrapolation.")
+                return []
 
         recent_pixels = np.array(pixels[-extr_pixels:])
         
@@ -388,15 +393,6 @@ def find_zone_border(image, edges, irl_width_mm=1435, irl_target_mm=1000, lowest
         
         return [border_l, border_r]
 
-def visualize(id_map, borders):
-        for border in borders:
-                for point in border[0]:
-                        id_map[point[1],point[0]] = 30
-                for point in border[1]:
-                        id_map[point[1],point[0]] = 30
-        plt.imshow(id_map)
-        plt.show()
-
 def get_clues(segmentation_mask, number_of_clues):
         
         lowest, highest = find_extreme_y_values(segmentation_mask)
@@ -404,7 +400,7 @@ def get_clues(segmentation_mask, number_of_clues):
         clues = []
         for i in range(number_of_clues):
                 clues.append(highest - (i*clue_step))
-        
+        #clues.append(lowest)
         return clues
 
 def border_handler(id_map, edges, target_distances, vis=False):
@@ -413,14 +409,19 @@ def border_handler(id_map, edges, target_distances, vis=False):
         borders = []
         for target in target_distances:
                 borders.append(find_zone_border(id_map, edges, irl_target_mm=target, lowest_y = lowest))
-                
+                for border in borders:
+                        for point in border[0]:
+                                id_map[point[1],point[0]] = 30
+                        for point in border[1]:
+                                id_map[point[1],point[0]] = 30
         if vis:
-                visualize(id_map, borders)
+                plt.imshow(id_map)
+                plt.show()
                 
-        return borders
+        return borders, id_map
 
-def segment(image_size, filename, PATH_jpgs, PATH_model, model_type):
-        image_norm, _, mask, _, model = load(filename, PATH_jpgs, PATH_model, image_size)
+def segment(image_size, filename, PATH_jpgs, PATH_model, dataset_type, item=None):
+        image_norm, _, mask, _, model = load(filename, PATH_jpgs, PATH_model, image_size, dataset_type=dataset_type, item=item)
         id_map = process(model, image_norm, mask, model_type)
         id_map = cv2.resize(id_map, [1920,1080], interpolation=cv2.INTER_NEAREST)
         return id_map
@@ -433,7 +434,7 @@ def detect(PATH_model, filename_img, PATH_jpgs):
         model.overrides['iou'] = 0.45  # NMS IoU threshold
         model.overrides['agnostic_nms'] = False  # NMS class-agnostic
         model.overrides['max_det'] = 1000  # maximum number of detections per image
-
+        
         image = cv2.imread(os.path.join(PATH_jpgs, filename_img))
         results = model.predict(image)
 
@@ -462,7 +463,7 @@ def manage_detections(results, model):
 
         return boxes_moving, boxes_stationary
 
-def classify_detections(boxes_moving, boxes_stationary, borders, image):
+def classify_detections(boxes_moving, boxes_stationary, borders):
         
         colors = ["red","orange","yellow","green","blue"]
         
@@ -470,6 +471,12 @@ def classify_detections(boxes_moving, boxes_stationary, borders, image):
         border_endpoints = []
         for i,border in enumerate(borders):
                 border_l = np.array(border[0])
+                
+                if list(border_l):
+                        pass
+                else:
+                        border_l=np.array([[0,0],[0,0]])
+                
                 max_l_x = np.max(border_l[:, 0])
                 max_l_y = np.max(border_l[:, 1])
                 min_l_x = np.min(border_l[:, 0])
@@ -477,6 +484,11 @@ def classify_detections(boxes_moving, boxes_stationary, borders, image):
                 endpoints_l = [border_l[0],border_l[-1]]
                 
                 border_r = np.array(border[1])
+                if list(border_r):
+                        pass
+                else:
+                        border_r=np.array([[0,0],[0,0]])
+                        
                 max_p_x = np.max(border_r[:, 0])
                 max_p_y = np.max(border_r[:, 1])
                 min_p_x = np.min(border_r[:, 0])
@@ -491,8 +503,7 @@ def classify_detections(boxes_moving, boxes_stationary, borders, image):
                 borders_extremes.append([[max_l_x,max_l_y],[min_l_x,min_l_y],[max_p_x,max_p_y],[min_p_x,min_p_y]])
                 border_endpoints.append([endpoints_l,endpoints_r])
         
-        boxes_moving_info = []
-        boxes_stationary_info = []
+        boxes_info = []
         
         if boxes_moving or boxes_stationary:
                 if boxes_moving:
@@ -516,8 +527,11 @@ def classify_detections(boxes_moving, boxes_stationary, borders, image):
                                                 if is_inside_borders:
                                                         criticality = i
                                                         color = colors[i]
+                                                        
+                                        if criticality == -1:
+                                                color = colors[3]
                                                 
-                                        boxes_moving_info.append([item, criticality, color, [center_point_x, center_point_y]])
+                                        boxes_info.append([item, criticality, color, [center_point_x, center_point_y],1])
                                                 
                 if boxes_stationary:
                         for item, coords in boxes_stationary.items():
@@ -538,36 +552,80 @@ def classify_detections(boxes_moving, boxes_stationary, borders, image):
                                                 instance_border_path = mplPath.Path(np.array(complete_border))
                                                 is_inside_borders = instance_border_path.contains_point((center_point_x,center_point_y))
                                                 
-                                        boxes_stationary_info.append([item, criticality, color, [center_point_x, center_point_y]])
+                                                if is_inside_borders:
+                                                        criticality = i
+                                                        color = colors[4]
+                                                
+                                        if criticality == -1:
+                                                color = colors[3]
+                                                
+                                        boxes_info.append([item, criticality, color, [center_point_x, center_point_y],0])
         
-                return boxes_moving_info, boxes_stationary_info
+                return boxes_info
         
         else:
                 print("No accepted detections in this image.")
                 return
 
-vis = 1
-
-for filename_img in os.listdir(PATH_jpgs):
+def show_classification(classification, id_map, names):
         
-        #filename_img = "rs07651.jpg"
+        if classification:
+                for box in classification:
+                        x,y = box[3]
+                        mark_value = 30
+                        
+                        x_start = int(max(x - 2, 0))
+                        x_end = int(min(x + 3, id_map.shape[1]))
+                        y_start = int(max(y - 2, 0))
+                        y_end = int(min(y + 3, id_map.shape[0]))
+                        
+                        id_map[y_start:y_end, x_start:x_end] = mark_value
+                
+                plt.imshow(id_map)
+
+                for box in classification:
+                        x,y = box[3]
+                        name = names[box[0]]
+                        color = box[2]
+                        plt.text(x, y+10, name, color=color, fontsize=10, ha='center', va='center')
+
+                plt.show()
+        else:
+                return
+        
+vis = 0
+
+#for filename_img in os.listdir(PATH_jpgs):
+for item in enumerate(data_json["data"]):
+        
+        filepath_img = item[1][1]["path"]
+        filepath_img = 'media/images/75602f8d0696c8043db2/frame_132280.png'
+        #filename_img = "rs07718.jpg" #rs07659 55
+        # segmentace ok - frame_121440.png,frame_121560.png,frame_123320.png,frame_125400.png,frame_127000.png,frame_128040.png
         
         # Segmentation
         image_size = [1024,1024]
         model_type = "segformer" #deeplab
-        segmentation_mask = segment(image_size, filename_img, PATH_jpgs, PATH_model_seg, model_type)
-        print(filename_img)
+        dataset_type = 'pilsen' #railsem19
+        if dataset_type == 'pilsen':
+                PATH_jpgs = PATH_base
+        
+        segmentation_mask = segment(image_size, filepath_img, PATH_jpgs, PATH_model_seg, dataset_type, item)
+        print('File: {}'.format(filepath_img))
 
         # Border search
         clues = get_clues(segmentation_mask, 10)
-        edges = find_edges(segmentation_mask, clues, min_width=int(segmentation_mask.shape[1]*0.02))
+        #edges = find_edges(segmentation_mask, clues, min_width=int(segmentation_mask.shape[1]*0.02))
+        edges = find_edges(segmentation_mask, clues, min_width=0)
         id_map_marked = mark_edges(segmentation_mask, edges)
         
-        target_distances = [500,1000,1500]
-        borders = border_handler(segmentation_mask, edges, target_distances, vis=True)
+        target_distances = [500,1000,3000]
+        borders, id_map = border_handler(segmentation_mask, edges, target_distances, vis=vis)
         
         # Detection
-        results, model, image = detect(PATH_model_det, filename_img, PATH_jpgs)
+        results, model, image = detect(PATH_model_det, filepath_img, PATH_jpgs)
         boxes_moving, boxes_stationary = manage_detections(results, model)
         
-        classification = classify_detections(boxes_moving, boxes_stationary, borders, image)
+        classification = classify_detections(boxes_moving, boxes_stationary, borders)
+        
+        show_classification(classification, id_map, model.names)

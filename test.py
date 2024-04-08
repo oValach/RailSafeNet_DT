@@ -19,7 +19,7 @@ PATH_model = 'RailNet_DT/models/modelchp_85_100_0.0002865237576874738_2_0.606629
 #model_300_0.001_13_16_dd_adamw.pth, model_300_0.005_13_32_fp_adamw.pth, model_300_0.01_13_16_wh.pth
 #modelchp_170_300_0.001_32_0.671144_aug.pth!, modelchp_105_200_0.001_32_0.725929_rf.pth, modelchp_185_200_0.001_32_0.788379_robustfire_noaug_480x480.pth
 
-def load(filename, PATH_jpgs, path_model, input_size=[224,224]):
+def load(filename, PATH_jpgs, path_model, input_size=[224,224], dataset_type='rs19val', item = None):
     transform_resize = A.Compose([
                     A.RandomResizedCrop(height=input_size[0], width=input_size[1], scale=(0.8, 1.0)),
                     ])
@@ -31,10 +31,14 @@ def load(filename, PATH_jpgs, path_model, input_size=[224,224]):
     transform_mask = A.Compose([
                     #A.Resize(height=input_size[0], width=input_size[1], interpolation=cv2.INTER_NEAREST),
                     ToTensorV2(p=1.0),
-                    ])
+                    ])  
     
+    if dataset_type == 'pilsen':
+        mask_pth = item[1][1]["masks"]["ground_truth"]["path"]
+        mask_pth = os.path.join(PATH_jpgs, mask_pth)
+    else:
+        mask_pth = os.path.join(PATH_masks, filename).replace('.jpg', '.png')
     image = cv2.imread(os.path.join(PATH_jpgs, filename))
-    mask_pth = os.path.join(PATH_masks, filename).replace('.jpg', '.png')
     mask = cv2.imread(mask_pth, cv2.IMREAD_GRAYSCALE)
 
     # LOAD THE IMAGE
@@ -238,11 +242,12 @@ if __name__ == "__main__":
             if images_computed > 50:
                 break
         
+        model_type = "segformer" #"deeplab"
+        dataset_type = 'rs19val'
         #filename = 'rs07848.jpg'
-        image_norm, image, mask, id_map_gt, model = load(filename, PATH_jpgs, PATH_model, image_size)
+        image_norm, image, mask, id_map_gt, model = load(filename, PATH_jpgs, PATH_model, image_size, dataset_type)
 
         # INFERENCE + SOFTMAX
-        model_type = "segformer" #"deeplab"
         id_map = process(model, image_norm, mask, model_type)
         
         # mAP

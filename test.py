@@ -20,16 +20,16 @@ PATH_model = 'RailNet_DT/models/modelchp_85_100_0.0002865237576874738_2_0.606629
 #modelchp_170_300_0.001_32_0.671144_aug.pth!, modelchp_105_200_0.001_32_0.725929_rf.pth, modelchp_185_200_0.001_32_0.788379_robustfire_noaug_480x480.pth
 
 def load(filename, PATH_jpgs, path_model, input_size=[224,224], dataset_type='rs19val', item = None):
-    transform_resize = A.Compose([
-                    A.RandomResizedCrop(height=input_size[0], width=input_size[1], scale=(0.8, 1.0)),
-                    ])
+    #transform_resize = A.Compose([
+    #                A.RandomResizedCrop(height=input_size[0], width=input_size[1], scale=(0.8, 1.0)),
+    #                ])
     transform_img = A.Compose([
-                    #A.Resize(height=input_size[0], width=input_size[1], interpolation=cv2.INTER_NEAREST),
+                    A.Resize(height=input_size[0], width=input_size[1], interpolation=cv2.INTER_NEAREST),
                     A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
                     ToTensorV2(p=1.0),
                     ])
     transform_mask = A.Compose([
-                    #A.Resize(height=input_size[0], width=input_size[1], interpolation=cv2.INTER_NEAREST),
+                    A.Resize(height=input_size[0], width=input_size[1], interpolation=cv2.INTER_NEAREST),
                     ToTensorV2(p=1.0),
                     ])  
     
@@ -51,9 +51,9 @@ def load(filename, PATH_jpgs, path_model, input_size=[224,224], dataset_type='rs
     #id_map_gt = cv2.resize(mask_gr, (224, 224), interpolation=cv2.INTER_NEAREST)
     #mask = torch.tensor(id_map_gt, dtype=torch.float32).long()
 
-    transformed = transform_resize(image=image, mask=mask)
-    image = transformed['image']
-    mask = transformed['mask']
+    #transformed = transform_resize(image=image, mask=mask)
+    #image = transformed['image']
+    #mask = transformed['mask']
     
     image_tr = transform_img(image=image)['image']
     image_tr = image_tr.unsqueeze(0)

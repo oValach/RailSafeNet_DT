@@ -5,6 +5,7 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
+from sahi.prediction import ObjectPrediction, PredictionScore
 from collections import defaultdict
 import matplotlib.path as mplPath
 from matplotlib.path import Path
@@ -442,32 +443,33 @@ def detect(PATH_model, filename_img, PATH_jpgs):
 
 def manage_detections(results, model):
         names = model.model.names
-        bbox = results[0].boxes.xyxy.tolist()
+        bbox = results[0].boxes.xywh.tolist()
         cls = results[0].boxes.cls.tolist()
         accepted_stationary = np.array([24,25,26,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,56,57,58,59,60,61,62,63,68,69,70,71,72,73,74,75,78,79])
         accepted_moving = np.array([0,1,2,3,4,5,7,15,16,17,18,19,20,21,22,23])
         boxes_moving = {}
         boxes_stationary = {}
         if len(bbox) > 0:
-                for xyxy, clss in zip(bbox, cls):
+                for xywh, clss in zip(bbox, cls):
                         if clss in accepted_moving:
                                 if clss in boxes_moving.keys() and len(boxes_moving[clss]) > 0:
-                                        boxes_moving[clss].append(xyxy)
+                                        boxes_moving[clss].append(xywh)
                                 else:
-                                        boxes_moving[clss] = [xyxy]
+                                        boxes_moving[clss] = [xywh]
                         if clss in accepted_stationary:
                                 if clss in boxes_stationary.keys() and len(boxes_stationary[clss]) > 0:
-                                        boxes_stationary[clss].append(xyxy)
+                                        boxes_stationary[clss].append(xywh)
                                 else:
-                                        boxes_stationary[clss] = [xyxy]
+                                        boxes_stationary[clss] = [xywh]
 
         return boxes_moving, boxes_stationary
 
-def classify_detections(boxes_moving, boxes_stationary, borders):
-        
-        colors = ["red","orange","yellow","green","blue"]
-        
-        borders_extremes = []
+def classify_detections(boxes_moving, boxes_stationary, borders, img_dims):
+        img_h, img_w, _ = img_dims
+        img_h_scaletofullHD = 1920/img_w
+        img_w_scaletofullHD = 1080/img_h
+        colors = ["yellow","orange","red","green","blue"]
+
         border_endpoints = []
         for i,border in enumerate(borders):
                 border_l = np.array(border[0])
@@ -477,10 +479,6 @@ def classify_detections(boxes_moving, boxes_stationary, borders):
                 else:
                         border_l=np.array([[0,0],[0,0]])
                 
-                max_l_x = np.max(border_l[:, 0])
-                max_l_y = np.max(border_l[:, 1])
-                min_l_x = np.min(border_l[:, 0])
-                min_l_y = np.min(border_l[:, 1])
                 endpoints_l = [border_l[0],border_l[-1]]
                 
                 border_r = np.array(border[1])
@@ -489,10 +487,6 @@ def classify_detections(boxes_moving, boxes_stationary, borders):
                 else:
                         border_r=np.array([[0,0],[0,0]])
                         
-                max_p_x = np.max(border_r[:, 0])
-                max_p_y = np.max(border_r[:, 1])
-                min_p_x = np.min(border_r[:, 0])
-                min_p_y = np.min(border_r[:, 1])
                 endpoints_r = [border_r[0],border_r[-1]]
                 
                 interpolated_bottom = bresenham_line(endpoints_l[0][0],endpoints_l[0][1],endpoints_r[0][0],endpoints_r[0][1])
@@ -500,7 +494,6 @@ def classify_detections(boxes_moving, boxes_stationary, borders):
                 borders[i].append(interpolated_bottom)
                 borders[i].append(interpolated_top)
                 
-                borders_extremes.append([[max_l_x,max_l_y],[min_l_x,min_l_y],[max_p_x,max_p_y],[min_p_x,min_p_y]])
                 border_endpoints.append([endpoints_l,endpoints_r])
         
         boxes_info = []
@@ -509,20 +502,18 @@ def classify_detections(boxes_moving, boxes_stationary, borders):
                 if boxes_moving:
                         for item, coords in boxes_moving.items():
                                 for coord in coords:
-                                        x = coord[0]
-                                        y = coord[1]
-                                        xx = coord[2]
-                                        yy = coord[3]
-                                        center_point_x = x + ((xx-x)/2)
-                                        center_point_y = y + ((yy-y)/2)
+                                        x = coord[0]*img_w_scaletofullHD
+                                        y = coord[1]*img_h_scaletofullHD
+                                        w = coord[2]*img_w_scaletofullHD
+                                        h = coord[3]*img_h_scaletofullHD
                                         
                                         complete_border = []
                                         criticality = -1
                                         color = None
-                                        for i,border in enumerate(borders):
+                                        for i,border in enumerate(reversed(borders), start=len(borders) - 1):
                                                 complete_border = border[0]+border[1]+border[2]+border[3]
                                                 instance_border_path = mplPath.Path(np.array(complete_border))
-                                                is_inside_borders = instance_border_path.contains_point((center_point_x,center_point_y))
+                                                is_inside_borders = instance_border_path.contains_point((x,y))
                                                 
                                                 if is_inside_borders:
                                                         criticality = i
@@ -531,17 +522,15 @@ def classify_detections(boxes_moving, boxes_stationary, borders):
                                         if criticality == -1:
                                                 color = colors[3]
                                                 
-                                        boxes_info.append([item, criticality, color, [center_point_x, center_point_y],1])
+                                        boxes_info.append([item, criticality, color, [x, y],1])
                                                 
                 if boxes_stationary:
                         for item, coords in boxes_stationary.items():
                                 for coord in coords:
-                                        x = coord[0]
-                                        y = coord[1]
-                                        xx = coord[2]
-                                        yy = coord[3]
-                                        center_point_x = x + ((xx-x)/2)
-                                        center_point_y = y + ((yy-y)/2)
+                                        x = coord[0]*img_w_scaletofullHD
+                                        y = coord[1]*img_h_scaletofullHD
+                                        w = coord[2]*img_w_scaletofullHD
+                                        h = coord[3]*img_h_scaletofullHD
                                         
                                         complete_border = []
                                         criticality = -1
@@ -550,7 +539,7 @@ def classify_detections(boxes_moving, boxes_stationary, borders):
                                         for i,border in enumerate(borders):
                                                 complete_border = border[0]+border[1]+border[2]+border[3]
                                                 instance_border_path = mplPath.Path(np.array(complete_border))
-                                                is_inside_borders = instance_border_path.contains_point((center_point_x,center_point_y))
+                                                is_inside_borders = instance_border_path.contains_point((x,y))
                                                 
                                                 if is_inside_borders:
                                                         criticality = i
@@ -559,7 +548,7 @@ def classify_detections(boxes_moving, boxes_stationary, borders):
                                         if criticality == -1:
                                                 color = colors[3]
                                                 
-                                        boxes_info.append([item, criticality, color, [center_point_x, center_point_y],0])
+                                        boxes_info.append([item, criticality, color, [x, y],0])
         
                 return boxes_info
         
@@ -599,7 +588,7 @@ vis = 0
 for item in enumerate(data_json["data"]):
         
         filepath_img = item[1][1]["path"]
-        filepath_img = 'media/images/75602f8d0696c8043db2/frame_132280.png'
+        filepath_img = 'media/images/44aabd7ea3e4a32e034f/frame_132280.png'
         #filename_img = "rs07718.jpg" #rs07659 55
         # segmentace ok - frame_121440.png,frame_121560.png,frame_123320.png,frame_125400.png,frame_127000.png,frame_128040.png
         
@@ -626,6 +615,6 @@ for item in enumerate(data_json["data"]):
         results, model, image = detect(PATH_model_det, filepath_img, PATH_jpgs)
         boxes_moving, boxes_stationary = manage_detections(results, model)
         
-        classification = classify_detections(boxes_moving, boxes_stationary, borders)
+        classification = classify_detections(boxes_moving, boxes_stationary, borders, image.shape)
         
         show_classification(classification, id_map, model.names)

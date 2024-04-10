@@ -461,13 +461,7 @@ def manage_detections(results, model):
 
         return boxes_moving, boxes_stationary
 
-def classify_detections(boxes_moving, boxes_stationary, borders, img_dims):
-        img_h, img_w, _ = img_dims
-        img_h_scaletofullHD = 1920/img_w
-        img_w_scaletofullHD = 1080/img_h
-        colors = ["yellow","orange","red","green","blue"]
-
-        border_endpoints = []
+def compute_detection_borders(borders, output_dims=[1080,1920]):
         for i,border in enumerate(borders):
                 border_l = np.array(border[0])
                 
@@ -486,15 +480,62 @@ def classify_detections(boxes_moving, boxes_stationary, borders, img_dims):
                         
                 endpoints_r = [border_r[0],border_r[-1]]
                 
-                interpolated_bottom = bresenham_line(endpoints_l[0][0],endpoints_l[0][1],endpoints_r[0][0],endpoints_r[0][1])
                 interpolated_top = bresenham_line(endpoints_l[1][0],endpoints_l[1][1],endpoints_r[1][0],endpoints_r[1][1])
+
+                if (endpoints_l[0][0] == 0 and endpoints_r[0][1] == 1079) or (endpoints_l[0][0] == 0 and endpoints_r[0][1] == 1078):
+                        y_values = np.arange(endpoints_l[0][1], 1079)
+                        x_values = np.full_like(y_values, 0)
+                        bottom1 = np.column_stack((x_values, y_values))
+                        
+                        x_values = np.arange(0, endpoints_r[0][0])
+                        y_values = np.full_like(x_values, 1079)
+                        bottom2 = np.column_stack((x_values, y_values))
+                        
+                        interpolated_bottom = np.vstack((bottom1, bottom2))
+                        
+                elif (endpoints_l[0][1] == 1079 and endpoints_r[0][0] == 1919) or (endpoints_l[0][1] == 1078 and endpoints_r[0][0] == 1919):
+                        y_values = np.arange(endpoints_r[0][1], 1079)
+                        x_values = np.full_like(y_values, 1919)
+                        bottom1 = np.column_stack((x_values, y_values))
+                        
+                        x_values = np.arange(endpoints_l[0][0], 1919)
+                        y_values = np.full_like(x_values, 1079)
+                        bottom2 = np.column_stack((x_values, y_values))
+                        
+                        interpolated_bottom = np.vstack((bottom1, bottom2))
+                        
+                elif endpoints_l[0][0] == 0 and endpoints_r[0][0] == 1919:
+                        y_values = np.arange(endpoints_l[0][1], 1079)
+                        x_values = np.full_like(y_values, 0)
+                        bottom1 = np.column_stack((x_values, y_values))
+                        
+                        y_values = np.arange(endpoints_r[0][1], 1079)
+                        x_values = np.full_like(y_values, 1919)
+                        bottom2 = np.column_stack((x_values, y_values))
+                        
+                        bottom3_mid = bresenham_line(bottom1[-1][0],bottom1[-1][1],bottom2[-1][0],bottom2[-1][1])
+                        
+                        interpolated_bottom = np.vstack((bottom1, bottom2, bottom3_mid))
+
+                        
+                else:
+                        interpolated_bottom = bresenham_line(endpoints_l[0][0],endpoints_l[0][1],endpoints_r[0][0],endpoints_r[0][1])
+                
                 borders[i].append(interpolated_bottom)
                 borders[i].append(interpolated_top)
                 
-                border_endpoints.append([endpoints_l,endpoints_r])
+        return borders
+
+def classify_detections(boxes_moving, boxes_stationary, borders, img_dims, output_dims=[1080,1920]):
+        img_h, img_w, _ = img_dims
+        img_h_scaletofullHD = output_dims[1]/img_w
+        img_w_scaletofullHD = output_dims[0]/img_h
+        colors = ["yellow","orange","red","green","blue"]
+        
+        borders = compute_detection_borders(borders,output_dims)
         
         boxes_info = []
-        #boxes_moving[0.0].append([600,400,30,80])
+        boxes_moving[0.0].append([600,400,30,80])
         
         if boxes_moving or boxes_stationary:
                 if boxes_moving:
@@ -509,7 +550,8 @@ def classify_detections(boxes_moving, boxes_stationary, borders, img_dims):
                                         criticality = -1
                                         color = None
                                         for i,border in enumerate(reversed(borders)):
-                                                complete_border = border[0]+border[1]+border[2]+border[3]
+                                                complete_border = np.vstack((border[0], border[1], border[2], border[3]))
+                                                
                                                 instance_border_path = mplPath.Path(np.array(complete_border))
                                                 is_inside_borders = instance_border_path.contains_point((x,y))
                                                 
@@ -535,7 +577,7 @@ def classify_detections(boxes_moving, boxes_stationary, borders, img_dims):
                                         color = None
                                         is_inside_borders = 0
                                         for i,border in enumerate(reversed(borders), start=len(borders) - 1):
-                                                complete_border = border[0]+border[1]+border[2]+border[3]
+                                                complete_border = np.vstack((border[0], border[1], border[2], border[3]))
                                                 instance_border_path = mplPath.Path(np.array(complete_border))
                                                 is_inside_borders = instance_border_path.contains_point((x,y))
                                                 
@@ -588,6 +630,8 @@ def run(image_size, filepath_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dat
         segmentation_mask = segment(image_size, filepath_img, PATH_jpgs, PATH_model_seg, dataset_type, item)
         print('File: {}'.format(filepath_img))
         
+        output_size = segmentation_mask.shape
+        
         # Border search
         clues = get_clues(segmentation_mask, 10)
         #edges = find_edges(segmentation_mask, clues, min_width=int(segmentation_mask.shape[1]*0.02))
@@ -600,7 +644,7 @@ def run(image_size, filepath_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dat
         results, model, image = detect(PATH_model_det, filepath_img, PATH_jpgs)
         boxes_moving, boxes_stationary = manage_detections(results, model)
         
-        classification = classify_detections(boxes_moving, boxes_stationary, borders, image.shape)
+        classification = classify_detections(boxes_moving, boxes_stationary, borders, image.shape, output_dims=output_size)
         
         draw_classification(classification, id_map)
         if vis:
@@ -613,12 +657,12 @@ if __name__ == "__main__":
         vis = True
         image_size = [1024,1024]
         model_type = "segformer" #deeplab
-        target_distances = [500,1000,5000]
+        target_distances = [1000,1500,4000]
         
         if dataset_type == 'pilsen':
                 for item in enumerate(data_json["data"]):
                         filepath_img = item[1][1]["path"]
-                        #filepath_img = 'media/images/44aabd7ea3e4a32e034f/frame_132280.png'
+                        filepath_img = 'media/images/44aabd7ea3e4a32e034f/frame_132280.png'
                         # segmentace - frame_121440.png,frame_121560.png,frame_123320.png,frame_125400.png,frame_127000.png,frame_128040.png
                         run(image_size, filepath_img, PATH_base, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=vis, item=item)
         else:

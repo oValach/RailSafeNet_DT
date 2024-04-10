@@ -125,24 +125,24 @@ def find_rail_sides(img, edges_dict):
         for y,xs in edges_dict.items():
                 rails = find_rails(img, [y], values=[9,10], min_width=5)
                 left_border_actual = [min(xs)[0],y]
-                right_border_actual = [max(xs)[1],y]                        
+                right_border_actual = [max(xs)[1],y]
                 
                 for zone in rails:
-                        if abs(zone[1]-left_border_actual[0]) < 50:
+                        if abs(zone[1]-left_border_actual[0]) < y*0.04: # dynamic treshold
                                 left_border_actual[0] = zone[0]
-                        if abs(zone[0]-right_border_actual[0]) < 50:
+                        if abs(zone[0]-right_border_actual[0]) < y*0.04:
                                 right_border_actual[0] = zone[1]
                 
                 left_border.append(left_border_actual)
                 right_border.append(right_border_actual)
-        
-        # funkce outlieru zastavi na prvni nespojitosti -> delsi zona mela nespojitost na konci -> chci tu
+
+        # removing detected uncontioussness
         left_border, flags_l, _ = robust_rail_sides(left_border) # filter outliers
         right_border, flags_r, _ = robust_rail_sides(right_border)
         
         return left_border, right_border, flags_l, flags_r
 
-def robust_rail_sides(border, threshold=20):
+def robust_rail_sides(border, threshold=5):
         border = np.array(border)
         
         # delete borders found on the bottom side of the image
@@ -381,8 +381,6 @@ def extrapolate_borders(dist_marked_id_map, border_l, border_r, lowest_y):
 
 def find_zone_border(image, edges, irl_width_mm=1435, irl_target_mm=1000, lowest_y = 0):
         
-        irl_width_mm = 1435
-        
         left_border, right_border, flags_l, flags_r = find_rail_sides(image, edges)
         
         dist_marked_id_map, end_points_left, end_points_right = find_dist_from_edges(image, edges, left_border, right_border, irl_width_mm, irl_target_mm)
@@ -404,7 +402,7 @@ def get_clues(segmentation_mask, number_of_clues):
         #clues.append(lowest+int(clue_step))
         return clues
 
-def border_handler(id_map, edges, target_distances, vis=False):
+def border_handler(id_map, edges, target_distances):
         
         lowest, _ = find_extreme_y_values(id_map)
         borders = []
@@ -596,7 +594,7 @@ def classify_detections(boxes_moving, boxes_stationary, borders, img_dims, outpu
         
         else:
                 print("No accepted detections in this image.")
-                return
+                return []
 
 def draw_classification(classification, id_map):
         
@@ -627,7 +625,7 @@ def show_result(classification, id_map, names):
         else:
                 return
 
-def run(image_size, filepath_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=False, item=None, num_ys = 15):
+def run(image_size, filepath_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis, item=None, num_ys = 15):
 
         segmentation_mask = segment(image_size, filepath_img, PATH_jpgs, PATH_model_seg, dataset_type, item)
         print('File: {}'.format(filepath_img))
@@ -640,7 +638,7 @@ def run(image_size, filepath_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dat
         edges = find_edges(segmentation_mask, clues, min_width=0)
         #id_map_marked = mark_edges(segmentation_mask, edges)
         
-        borders, id_map = border_handler(segmentation_mask, edges, target_distances, vis=vis)
+        borders, id_map = border_handler(segmentation_mask, edges, target_distances)
         
         # Detection
         results, model, image = detect(PATH_model_det, filepath_img, PATH_jpgs)
@@ -649,20 +647,25 @@ def run(image_size, filepath_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dat
         classification = classify_detections(boxes_moving, boxes_stationary, borders, image.shape, output_dims=output_size)
         
         draw_classification(classification, id_map)
-        if vis:
+        if classification:
                 show_result(classification, id_map, model.names)
-        
+        else:
+                if vis:
+                        plt.imshow(segmentation_mask)
+                        plt.title('No detected objects in this image')
+                        plt.show()
+                
 
 if __name__ == "__main__":
 
-        dataset_type = 'pilsen' #railsem19
+        dataset_type = 'railsem19' #railsem19 or pilsen
         vis = True
         image_size = [1024,1024]
-        model_type = "segformer" #deeplab
+        model_type = "segformer" #segformer or deeplab
         target_distances = [1000,1500,4000]
-        num_ys=30
+        num_ys = 10
         
-        if dataset_type == 'railsem19':
+        if dataset_type == 'pilsen':
                 for item in enumerate(data_json["data"]):
                         filepath_img = item[1][1]["path"]
                         #filepath_img = 'media/images/44aabd7ea3e4a32e034f/frame_132280.png'
@@ -670,6 +673,6 @@ if __name__ == "__main__":
                         run(image_size, filepath_img, PATH_base, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=vis, item=item, num_ys=num_ys)
         else:
                 for filename_img in os.listdir(PATH_jpgs):
-                        # filename_img = "rs07718.jpg" #rs07659 55
+                        #filename_img = "rs07652.jpg" #rs07659 55 rs07718.jpg
                         run(image_size, filename_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=vis, item=None, num_ys=num_ys)
                         

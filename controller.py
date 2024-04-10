@@ -401,7 +401,7 @@ def get_clues(segmentation_mask, number_of_clues):
         clues = []
         for i in range(number_of_clues):
                 clues.append(highest - (i*clue_step))
-        #clues.append(lowest)
+        #clues.append(lowest+int(clue_step))
         return clues
 
 def border_handler(id_map, edges, target_distances, vis=False):
@@ -462,6 +462,9 @@ def manage_detections(results, model):
         return boxes_moving, boxes_stationary
 
 def compute_detection_borders(borders, output_dims=[1080,1920]):
+        det_height = output_dims[0]-1
+        det_width = output_dims[1]-1
+        
         for i,border in enumerate(borders):
                 border_l = np.array(border[0])
                 
@@ -482,35 +485,35 @@ def compute_detection_borders(borders, output_dims=[1080,1920]):
                 
                 interpolated_top = bresenham_line(endpoints_l[1][0],endpoints_l[1][1],endpoints_r[1][0],endpoints_r[1][1])
 
-                if (endpoints_l[0][0] == 0 and endpoints_r[0][1] == 1079) or (endpoints_l[0][0] == 0 and endpoints_r[0][1] == 1078):
-                        y_values = np.arange(endpoints_l[0][1], 1079)
+                if (endpoints_l[0][0] == 0 and endpoints_r[0][1] == det_height) or (endpoints_l[0][0] == 0 and endpoints_r[0][1] == det_height-1):
+                        y_values = np.arange(endpoints_l[0][1], det_height)
                         x_values = np.full_like(y_values, 0)
                         bottom1 = np.column_stack((x_values, y_values))
                         
                         x_values = np.arange(0, endpoints_r[0][0])
-                        y_values = np.full_like(x_values, 1079)
+                        y_values = np.full_like(x_values, det_height)
                         bottom2 = np.column_stack((x_values, y_values))
                         
                         interpolated_bottom = np.vstack((bottom1, bottom2))
                         
-                elif (endpoints_l[0][1] == 1079 and endpoints_r[0][0] == 1919) or (endpoints_l[0][1] == 1078 and endpoints_r[0][0] == 1919):
-                        y_values = np.arange(endpoints_r[0][1], 1079)
-                        x_values = np.full_like(y_values, 1919)
+                elif (endpoints_l[0][1] == det_height and endpoints_r[0][0] == det_width) or (endpoints_l[0][1] == det_height-1 and endpoints_r[0][0] == det_width):
+                        y_values = np.arange(endpoints_r[0][1], det_height)
+                        x_values = np.full_like(y_values, det_width)
                         bottom1 = np.column_stack((x_values, y_values))
                         
-                        x_values = np.arange(endpoints_l[0][0], 1919)
-                        y_values = np.full_like(x_values, 1079)
+                        x_values = np.arange(endpoints_l[0][0], det_width)
+                        y_values = np.full_like(x_values, det_height)
                         bottom2 = np.column_stack((x_values, y_values))
                         
                         interpolated_bottom = np.vstack((bottom1, bottom2))
                         
-                elif endpoints_l[0][0] == 0 and endpoints_r[0][0] == 1919:
-                        y_values = np.arange(endpoints_l[0][1], 1079)
+                elif endpoints_l[0][0] == 0 and endpoints_r[0][0] == det_width:
+                        y_values = np.arange(endpoints_l[0][1], det_height)
                         x_values = np.full_like(y_values, 0)
                         bottom1 = np.column_stack((x_values, y_values))
                         
-                        y_values = np.arange(endpoints_r[0][1], 1079)
-                        x_values = np.full_like(y_values, 1919)
+                        y_values = np.arange(endpoints_r[0][1], det_height)
+                        x_values = np.full_like(y_values, det_width)
                         bottom2 = np.column_stack((x_values, y_values))
                         
                         bottom3_mid = bresenham_line(bottom1[-1][0],bottom1[-1][1],bottom2[-1][0],bottom2[-1][1])
@@ -535,7 +538,6 @@ def classify_detections(boxes_moving, boxes_stationary, borders, img_dims, outpu
         borders = compute_detection_borders(borders,output_dims)
         
         boxes_info = []
-        boxes_moving[0.0].append([600,400,30,80])
         
         if boxes_moving or boxes_stationary:
                 if boxes_moving:
@@ -625,7 +627,7 @@ def show_result(classification, id_map, names):
         else:
                 return
 
-def run(image_size, filepath_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=False, item=None):
+def run(image_size, filepath_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=False, item=None, num_ys = 15):
 
         segmentation_mask = segment(image_size, filepath_img, PATH_jpgs, PATH_model_seg, dataset_type, item)
         print('File: {}'.format(filepath_img))
@@ -633,7 +635,7 @@ def run(image_size, filepath_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dat
         output_size = segmentation_mask.shape
         
         # Border search
-        clues = get_clues(segmentation_mask, 10)
+        clues = get_clues(segmentation_mask, num_ys)
         #edges = find_edges(segmentation_mask, clues, min_width=int(segmentation_mask.shape[1]*0.02))
         edges = find_edges(segmentation_mask, clues, min_width=0)
         #id_map_marked = mark_edges(segmentation_mask, edges)
@@ -658,15 +660,16 @@ if __name__ == "__main__":
         image_size = [1024,1024]
         model_type = "segformer" #deeplab
         target_distances = [1000,1500,4000]
+        num_ys=30
         
-        if dataset_type == 'pilsen':
+        if dataset_type == 'railsem19':
                 for item in enumerate(data_json["data"]):
                         filepath_img = item[1][1]["path"]
-                        filepath_img = 'media/images/44aabd7ea3e4a32e034f/frame_132280.png'
+                        #filepath_img = 'media/images/44aabd7ea3e4a32e034f/frame_132280.png'
                         # segmentace - frame_121440.png,frame_121560.png,frame_123320.png,frame_125400.png,frame_127000.png,frame_128040.png
-                        run(image_size, filepath_img, PATH_base, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=vis, item=item)
+                        run(image_size, filepath_img, PATH_base, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=vis, item=item, num_ys=num_ys)
         else:
                 for filename_img in os.listdir(PATH_jpgs):
                         # filename_img = "rs07718.jpg" #rs07659 55
-                        run(image_size, filename_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=vis, item=None)
+                        run(image_size, filename_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=vis, item=None, num_ys=num_ys)
                         

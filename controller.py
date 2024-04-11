@@ -142,7 +142,7 @@ def find_rail_sides(img, edges_dict):
         
         return left_border, right_border, flags_l, flags_r
 
-def robust_rail_sides(border, threshold=5):
+def robust_rail_sides(border, threshold=7):
         border = np.array(border)
         
         # delete borders found on the bottom side of the image
@@ -368,14 +368,17 @@ def extrapolate_line(pixels, image, min_y=None, extr_pixels=10):
 
 def extrapolate_borders(dist_marked_id_map, border_l, border_r, lowest_y):
         
-        border_extrapolation_l1 = extrapolate_line(border_l, dist_marked_id_map, lowest_y)
+        #border_extrapolation_l1 = extrapolate_line(border_l, dist_marked_id_map, lowest_y)
         border_extrapolation_l2 = extrapolate_line(border_l[::-1], dist_marked_id_map, lowest_y)
         
-        border_extrapolation_r1 = extrapolate_line(border_r, dist_marked_id_map, lowest_y)
+        #border_extrapolation_r1 = extrapolate_line(border_r, dist_marked_id_map, lowest_y)
         border_extrapolation_r2 = extrapolate_line(border_r[::-1], dist_marked_id_map, lowest_y)
         
-        border_l = border_extrapolation_l2[::-1] + border_l + border_extrapolation_l1
-        border_r = border_extrapolation_r2[::-1] + border_r + border_extrapolation_r1
+        #border_l = border_extrapolation_l2[::-1] + border_l + border_extrapolation_l1
+        #border_r = border_extrapolation_r2[::-1] + border_r + border_extrapolation_r1
+        
+        border_l = border_extrapolation_l2[::-1] + border_l
+        border_r = border_extrapolation_r2[::-1] + border_r
         
         return border_l, border_r
 
@@ -536,6 +539,7 @@ def classify_detections(boxes_moving, boxes_stationary, borders, img_dims, outpu
         borders = compute_detection_borders(borders,output_dims)
         
         boxes_info = []
+        #boxes_moving[0.0].append([250,1000,20,40])
         
         if boxes_moving or boxes_stationary:
                 if boxes_moving:
@@ -673,6 +677,6 @@ if __name__ == "__main__":
                         run(image_size, filepath_img, PATH_base, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=vis, item=item, num_ys=num_ys)
         else:
                 for filename_img in os.listdir(PATH_jpgs):
-                        #filename_img = "rs07652.jpg" #rs07659 55 rs07718.jpg
+                        #filename_img = "rs07651.jpg" #rs07659 55 rs07718.jpg
                         run(image_size, filename_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=vis, item=None, num_ys=num_ys)
                         

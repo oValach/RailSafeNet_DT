@@ -165,7 +165,28 @@ def find_edges(image, y_levels, values=[0, 6], min_width=19):
                 filtered_edges = [(start, end) for start, end in zip(starts, ends) if end - start + 1 >= min_width]
                 filtered_edges = [(start, end) for start, end in filtered_edges if 0 not in (start, end) and 1919 not in (start, end)]
                 
-                edges_dict[y] = filtered_edges
+                edges_with_guard_rails = []
+                for edge in filtered_edges:
+                        cutout_left = image[y,edge[0]-50:edge[0]][::-1]
+                        cutout_right = image[y,edge[1]:edge[1]+50]
+                        
+                        not_ones = np.where(cutout_left != 1)[0]
+                        if len(not_ones) > 0 and not_ones[0] > 0:
+                                last_one_index = not_ones[0] - 1
+                                edge = (edge[0] - last_one_index,) + edge[1:]
+                        else:
+                                last_one_index = None if len(not_ones) == 0 else not_ones[-1] - 1
+                        
+                        not_ones = np.where(cutout_right != 1)[0]
+                        if len(not_ones) > 0 and not_ones[0] > 0:
+                                last_one_index = not_ones[0] - 1
+                                edge = (edge[0], edge[1] - last_one_index) + edge[2:]
+                        else:
+                                last_one_index = None if len(not_ones) == 0 else not_ones[-1] - 1
+                        
+                        edges_with_guard_rails.append(edge)
+
+                edges_dict[y] = edges_with_guard_rails
         
         edges_dict = {k: v for k, v in edges_dict.items() if v}
         
@@ -249,7 +270,7 @@ def robust_rail_sides(border, threshold=7):
         
         
         steps_x = np.diff(border[:, 0])
-        median_step = np.median(steps_x)
+        median_step = np.median(np.abs(steps_x))
         
         threshold_step = np.abs(threshold*np.abs(median_step))
         treshold_overcommings = abs(steps_x) > abs(threshold_step)
@@ -740,7 +761,7 @@ def run(image_size, filepath_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dat
         clues = get_clues(segmentation_mask, num_ys)
         #edges = find_edges(segmentation_mask, clues, min_width=int(segmentation_mask.shape[1]*0.02))
         edges = find_edges(segmentation_mask, clues, min_width=0)
-        id_map_marked = mark_edges(segmentation_mask, edges)
+        #id_map_marked = mark_edges(segmentation_mask, edges)
         
         borders, id_map = border_handler(segmentation_mask, edges, target_distances)
         
@@ -756,7 +777,7 @@ def run(image_size, filepath_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dat
         else:
                 if vis:
                         plt.imshow(segmentation_mask)
-                        plt.title('No detected objects in this image')
+                        plt.title('Image with no objects detected')
                         plt.show()
 
 if __name__ == "__main__":
@@ -765,7 +786,7 @@ if __name__ == "__main__":
         vis = True
         image_size = [1024,1024]
         model_type = "segformer" #segformer or deeplab
-        target_distances = [1000,1500,4000]
+        target_distances = [5400,6500,8000]
         num_ys = 10
         
         if dataset_type == 'pilsen':
@@ -776,6 +797,5 @@ if __name__ == "__main__":
                         run(image_size, filepath_img, PATH_base, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=vis, item=item, num_ys=num_ys)
         else:
                 for filename_img in os.listdir(PATH_jpgs):
-                        filename_img = "rs07666.jpg" #rs07659 55 rs07718.jpg
+                        #filename_img = "rs07898.jpg" #rs07659 55 rs07718.jpg rs07662.jpg - rs07898.jpg (priklad s lidmi pro 5400,6500,8000)
                         run(image_size, filename_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=vis, item=None, num_ys=num_ys)
-        

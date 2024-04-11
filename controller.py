@@ -69,8 +69,18 @@ def find_edges(arr, y_levels, values=[0, 6], min_width=19):
                 filtered_edges = [(start, end) for start, end in filtered_edges if 0 not in (start, end) and 1919 not in (start, end)]
                 
                 edges_dict[y] = filtered_edges
+        
+        filtered_edges = {}
+        for key, values in edges_dict.items():
+                merged = [values[0]]
+                for start, end in values[1:]:
+                        if start - merged[-1][1] < 50:
+                                merged[-1] = (merged[-1][0], end)
+                        else:
+                                merged.append((start, end))
+                filtered_edges[key] = merged
                 
-        edges_dict = {k: v for k, v in edges_dict.items() if v}
+        edges_dict = {k: v for k, v in filtered_edges.items() if v}
         
         return edges_dict
 
@@ -402,7 +412,7 @@ def get_clues(segmentation_mask, number_of_clues):
         clues = []
         for i in range(number_of_clues):
                 clues.append(highest - (i*clue_step))
-        #clues.append(lowest+int(clue_step))
+        clues.append(lowest+int(0.5*clue_step))
         return clues
 
 def border_handler(id_map, edges, target_distances):
@@ -640,7 +650,7 @@ def run(image_size, filepath_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dat
         clues = get_clues(segmentation_mask, num_ys)
         #edges = find_edges(segmentation_mask, clues, min_width=int(segmentation_mask.shape[1]*0.02))
         edges = find_edges(segmentation_mask, clues, min_width=0)
-        #id_map_marked = mark_edges(segmentation_mask, edges)
+        id_map_marked = mark_edges(segmentation_mask, edges)
         
         borders, id_map = border_handler(segmentation_mask, edges, target_distances)
         
@@ -658,7 +668,6 @@ def run(image_size, filepath_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dat
                         plt.imshow(segmentation_mask)
                         plt.title('No detected objects in this image')
                         plt.show()
-                
 
 if __name__ == "__main__":
 
@@ -677,6 +686,6 @@ if __name__ == "__main__":
                         run(image_size, filepath_img, PATH_base, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=vis, item=item, num_ys=num_ys)
         else:
                 for filename_img in os.listdir(PATH_jpgs):
-                        #filename_img = "rs07651.jpg" #rs07659 55 rs07718.jpg
+                        filename_img = "rs07662.jpg" #rs07659 55 rs07718.jpg
                         run(image_size, filename_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=vis, item=None, num_ys=num_ys)
                         

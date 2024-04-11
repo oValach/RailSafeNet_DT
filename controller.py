@@ -41,7 +41,104 @@ def find_extreme_y_values(arr, values=[0, 6]):
         
         return y_indices[0], y_indices[-1]
 
-def find_edges(arr, y_levels, values=[0, 6], min_width=19):
+def find_nearest_pairs(arr1, arr2):
+        # Convert lists to numpy arrays for vectorized operations
+        arr1_np = np.array(arr1)
+        arr2_np = np.array(arr2)
+        
+        # Determine which array is shorter
+        if len(arr1_np) < len(arr2_np):
+                base_array, compare_array = arr1_np, arr2_np
+        else:
+                base_array, compare_array = arr2_np, arr1_np
+
+        paired_base = []
+        paired_compare = []
+
+        # Mask to keep track of paired elements
+        paired_mask = np.zeros(len(compare_array), dtype=bool)
+
+        for item in base_array:
+                # Calculate distances from the current item to all items in the compare_array
+                distances = np.linalg.norm(compare_array - item, axis=1)
+                nearest_index = np.argmin(distances)
+                paired_base.append(item)
+                paired_compare.append(compare_array[nearest_index])
+                # Mark the paired element to exclude it from further pairing
+                paired_mask[nearest_index] = True
+
+                # Check if all elements from the compare_array have been paired
+                if paired_mask.all():
+                        break
+
+        paired_base = np.array(paired_base)
+        paired_compare = compare_array[paired_mask]
+
+        return (paired_base, paired_compare) if len(arr1_np) < len(arr2_np) else (paired_compare, paired_base)
+
+def filter_crossings(image, edges_dict):
+        filtered_edges = {}
+        for key, values in edges_dict.items():
+                merged = [values[0]]
+                for start, end in values[1:]:
+                        if start - merged[-1][1] < 50:
+                                
+                                key_up = max([0, key-10])
+                                key_down = min([1079, key+10])
+                                if key_up == 0:
+                                        key_up = key+20
+                                if key_down == 1079:
+                                        key_down = key-20
+                                
+                                edges_to_test_slope1 = robust_edges(image, [key_up], values=[0, 6], min_width=19)
+                                edges_to_test_slope2 = robust_edges(image, [key_down], values=[0, 6], min_width=19)
+                                
+                                values1, edges_to_test_slope1 = find_nearest_pairs(values, edges_to_test_slope1)
+                                values2, edges_to_test_slope2 = find_nearest_pairs(values, edges_to_test_slope2)
+                                
+                                differences_y = []
+                                for i, value in enumerate(values1):
+                                        if start in value:
+                                                idx = list(value).index(start)
+                                                differences_y.append(abs(start-edges_to_test_slope1[i][idx]))
+                                        if merged[-1][1] in value:
+                                                idx = list(value).index(merged[-1][1])
+                                                differences_y.append(abs(merged[-1][1]-edges_to_test_slope1[i][idx]))
+                                for i, value in enumerate(values2):
+                                        if start in value:
+                                                idx = list(value).index(start)
+                                                differences_y.append(abs(start-edges_to_test_slope2[i][idx]))
+                                        if merged[-1][1] in value:
+                                                idx = list(value).index(merged[-1][1])
+                                                differences_y.append(abs(merged[-1][1]-edges_to_test_slope2[i][idx]))
+                                
+                                if any(element > 30 for element in differences_y):
+                                        merged[-1] = (merged[-1][0], end)
+                                else:
+                                        merged.append((start, end))
+                        else:
+                                merged.append((start, end))
+                filtered_edges[key] = merged
+                
+        return filtered_edges
+
+def robust_edges(image, y_levels, values=[0, 6], min_width=19):
+        
+        for y in y_levels:
+                row = image[y, :]
+                mask = np.isin(row, values).astype(int)
+                padded_mask = np.pad(mask, (1, 1), 'constant', constant_values=0)
+                diff = np.diff(padded_mask)
+                starts = np.where(diff == 1)[0]
+                ends = np.where(diff == -1)[0] - 1
+
+                # Filter sequences based on the minimum width criteria
+                filtered_edges = [(start, end) for start, end in zip(starts, ends) if end - start + 1 >= min_width]
+                filtered_edges = [(start, end) for start, end in filtered_edges if 0 not in (start, end) and 1919 not in (start, end)]
+        
+        return filtered_edges
+
+def find_edges(image, y_levels, values=[0, 6], min_width=19):
         """
         Find start and end positions of continuous sequences of specified values at given y-levels in a 2D array,
         filtering for sequences that meet or exceed a specified minimum width.
@@ -57,7 +154,7 @@ def find_edges(arr, y_levels, values=[0, 6], min_width=19):
         """
         edges_dict = {}
         for y in y_levels:
-                row = arr[y, :]
+                row = image[y, :]
                 mask = np.isin(row, values).astype(int)
                 padded_mask = np.pad(mask, (1, 1), 'constant', constant_values=0)
                 diff = np.diff(padded_mask)
@@ -70,17 +167,9 @@ def find_edges(arr, y_levels, values=[0, 6], min_width=19):
                 
                 edges_dict[y] = filtered_edges
         
-        filtered_edges = {}
-        for key, values in edges_dict.items():
-                merged = [values[0]]
-                for start, end in values[1:]:
-                        if start - merged[-1][1] < 50:
-                                merged[-1] = (merged[-1][0], end)
-                        else:
-                                merged.append((start, end))
-                filtered_edges[key] = merged
-                
-        edges_dict = {k: v for k, v in filtered_edges.items() if v}
+        edges_dict = {k: v for k, v in edges_dict.items() if v}
+        
+        edges_dict = filter_crossings(image, edges_dict)
         
         return edges_dict
 
@@ -413,6 +502,7 @@ def get_clues(segmentation_mask, number_of_clues):
         for i in range(number_of_clues):
                 clues.append(highest - (i*clue_step))
         clues.append(lowest+int(0.5*clue_step))
+                
         return clues
 
 def border_handler(id_map, edges, target_distances):
@@ -686,6 +776,6 @@ if __name__ == "__main__":
                         run(image_size, filepath_img, PATH_base, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=vis, item=item, num_ys=num_ys)
         else:
                 for filename_img in os.listdir(PATH_jpgs):
-                        filename_img = "rs07662.jpg" #rs07659 55 rs07718.jpg
+                        filename_img = "rs07666.jpg" #rs07659 55 rs07718.jpg
                         run(image_size, filename_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=vis, item=None, num_ys=num_ys)
-                        
+        

@@ -564,8 +564,8 @@ def manage_detections(results, model):
         names = model.model.names
         bbox = results[0].boxes.xywh.tolist()
         cls = results[0].boxes.cls.tolist()
-        accepted_stationary = np.array([24,25,26,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,56,57,58,59,60,61,62,63,68,69,70,71,72,73,74,75,78,79])
-        accepted_moving = np.array([0,1,2,3,4,5,7,15,16,17,18,19,20,21,22,23])
+        accepted_stationary = np.array([24,25,26,28,29,30,31,36,56,57,59,60,61,62,63,68,69,70,71,72,78])
+        accepted_moving = np.array([0,1,2,3,5,7,15,16,17,18,19,20,21,22,23])
         boxes_moving = {}
         boxes_stationary = {}
         if len(bbox) > 0:

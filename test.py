@@ -250,6 +250,11 @@ if __name__ == "__main__":
         # INFERENCE + SOFTMAX
         id_map = process(model, image_norm, mask, model_type)
         
+        import matplotlib.pyplot as plt
+        plt.imshow(id_map)
+        plt.show()
+        
+        
         # mAP
         id_map_gt = remap_ignored_clss(id_map_gt)
         map,classes_ap  = compute_map_cls(id_map_gt, id_map, classes_ap)

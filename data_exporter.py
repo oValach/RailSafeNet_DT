@@ -30,11 +30,11 @@ rs19_label2bgr = {"buffer-stop": (70,70,70),
                 "truck" : (70,0,0)
                 }
 
-PATH_UINT = "rs19_val/uint8/rs19_val"
-PATH_CONFIG = "rs19_val/rs19-config.json"
-PATH_JPGS = "rs19_val/jpgs/rs19_val"
-PATH_MASKS = "rs19_val/masks"
-PATH_OBJECTS = "rs19_val/masks/rails"
+PATH_UINT = "RailNet_DT/rs19_val/uint8/rs19_val"
+PATH_CONFIG = "RailNet_DT/rs19_val/rs19-config.json"
+PATH_JPGS = "RailNet_DT/rs19_val/jpgs/rs19_val"
+PATH_MASKS = "RailNet_DT/rs19_val/masks"
+PATH_OBJECTS = "RailNet_DT/rs19_val/masks/rails"
 
 def get_color_map(cur_dir):
     im_id_map = cv2.imread(cur_dir,cv2.IMREAD_GRAYSCALE) #get semantic label map
@@ -42,9 +42,11 @@ def get_color_map(cur_dir):
     lut_bgr = config_to_rgb(PATH_CONFIG, default_col = [255,255,255])[::-1] #swap color channels as opencv uses BGR
     for c in range(3):
         im_id_col[:,:,c] = lut_bgr[c][im_id_map] #apply color coding    
-
-    #plt.imshow(im_id_col)
-    #plt.show()
+    
+    if 16 in im_id_map or 19 in im_id_map or 20 in im_id_map:
+        im_id_map[im_id_map==255] = 22
+        plt.imshow(im_id_map)
+        #plt.show()
     return im_id_col
 
 def export_segmented_labels(file_idx):

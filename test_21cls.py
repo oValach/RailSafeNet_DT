@@ -183,12 +183,11 @@ if __name__ == "__main__":
     classes_ap,classes_Map,classes_stats,classes_Mstats = {},{},{},{}
     images_computed = 0
     
-    #print(os.getcwd())
     for filename in os.listdir(PATH_jpgs):
         images_computed += 1
         
         image_size = [1024,1024]
-        vis = True
+        vis = False
         
         #if images_computed > 50:
         #    break
@@ -214,6 +213,9 @@ if __name__ == "__main__":
         id_map = np.argmax(confidence_scores, axis=0).astype(np.uint8)
         id_map = image_morpho(id_map)
         
+        import matplotlib.pyplot as plt
+        plt.imshow(id_map)
+        plt.show()
         
         # mAP
         map,classes_ap  = compute_map_cls(id_map_gt, id_map, classes_ap)

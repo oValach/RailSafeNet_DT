@@ -3,6 +3,29 @@ import numpy as np
 import json
 import random
 import matplotlib.pyplot as plt
+from PIL import Image
+
+translate_dict = {0: "road",
+                    1:"sidewalk",
+                    2:"construction",
+                    3:"tram-track",
+                    4:"fence",
+                    5:"pole",
+                    6:"traffic-light",
+                    7:"traffic-sign",
+                    8:"vegetation",
+                    9:"terrain",
+                    10:"sky",
+                    11:"human",
+                    12:"rail-track",
+                    13:"car",
+                    14:"truck, bus",
+                    15:"trackbed",
+                    16:"on-rails",
+                    17:"rail-raised",
+                    18:"rail-embedded",
+                    19:"void"
+                }           
 
 def files_in_subdirs(start_dir, pattern = ["*.png","*.jpg","*.jpeg"]):
     files = []
@@ -11,11 +34,10 @@ def files_in_subdirs(start_dir, pattern = ["*.png","*.jpg","*.jpeg"]):
             files.extend(glob.glob(os.path.join(dir,p)))
     return files
 
-def export_objects(json_files):
+def export_objects_json(json_files):
     f_index = 0
     objects = {}
     files = len(json_files)
-    #printProgressBar(0, files, prefix = 'Progress:', suffix = 'Complete', length = 50)
     for json_dir in json_files:
         object_list = {}
         json_file = open(json_dir)
@@ -31,7 +53,25 @@ def export_objects(json_files):
         f_index += 1
         if f_index % 100 == 0:
             print(f_index)
-            #printProgressBar(f_index + 1, files, prefix = 'Loading statistics:', suffix = 'Complete', length = 50)
+
+    return objects
+
+def export_objects_mask(mask_files, dict):
+    f_index = 0
+    objects = {}
+    for mask_dir in mask_files:
+        object_list = {}
+        with Image.open(mask_dir) as img:
+                img_array = np.array(img)
+                unique_ids = np.unique(img_array)
+                if 255 in unique_ids:
+                    unique_ids[list(unique_ids).index(255)] = 19
+                object_list = {dict[uid]: 1 for uid in unique_ids}
+        
+        objects[f_index] = object_list
+        f_index += 1
+        if f_index % 100 == 0:
+            print(f_index)
 
     return objects
 
@@ -91,7 +131,7 @@ def display_hist1(data_dict):
     ax.set_title('Frequency of objects not present at pictures')
 
     # Rotate the x-axis labels by 90 degrees
-    plt.xticks(rotation=25)
+    plt.xticks(rotation=50)
 
     # Show the plot
     plt.show()
@@ -163,14 +203,86 @@ def display_hist2(main_dict, unique_keys):
 
     plt.show()
 
-if __name__ == "__main__":
-    all_json = files_in_subdirs("./rs19_val/jsons/", pattern = ["*.json"])
+def normalize_dicts(dicts):
+    # Gather all keys from all dictionaries
+    all_keys = set().union(*[d.keys() for d in dicts])
+    # Ensure all dictionaries have the same keys
+    for d in dicts:
+        missing_keys = all_keys - d.keys()
+        for key in missing_keys:
+            d[key] = 0  # Set missing keys to zero
+    return dicts
+
+def sort_dicts_by_first(dict1, dict2, dict3):
+    # Check if all dictionaries have the same keys
+    if set(dict1.keys()) == set(dict2.keys()) == set(dict3.keys()):
+        # Order dict2 and dict3 according to the key order of dict1
+        ordered_dict2 = {key: dict2[key] for key in dict1.keys()}
+        ordered_dict3 = {key: dict3[key] for key in dict1.keys()}
+        return dict1, ordered_dict2, ordered_dict3
+    else:
+        # Return False if dictionaries do not have the same keys
+        return dict1, dict2, dict3
+
+def display_hist3(dict1,dict2,dict3):
+    normalize_dicts([dict1,dict2,dict3])
+    dict1,dict2,dict3 = sort_dicts_by_first(dict1,dict2,dict3)
+    # Extract keys and values
+    classes = list(dict1.keys())
+    values1 = list(dict1.values())
+    values2 = list(dict2.values())
+    values3 = list(dict3.values())
+
+    # Setting the positions and width for the bars
+    positions = np.arange(len(classes))
+    width = 0.25  # the width of a bar
+
+    # Plotting
+    plt.style.use('bmh')
+    plt.rcParams.update({'font.size': 12})
+    fig, ax = plt.subplots()
+    bar1 = ax.bar(positions - width, values1, width, label='Full Railsem19 dataset')
+    bar2 = ax.bar(positions, values2, width, label='Railsem19 test subset')
+    bar3 = ax.bar(positions + width, values3, width, label='Railsem19 train subset')
     
-    objects_exported = export_objects(all_json)
-    all_keys_count,file_all_keys_count,file_unique_keys_count,unique_keys,img_count,key_not_present_count = get_stats(objects_exported)
-    display_hist1(key_not_present_count)
-    display_hist1(all_keys_count)
-    display_hist2(objects_exported, unique_keys)
+    # Set labels, title, and tick parameters with specific font sizes
+    ax.set_xlabel('Class Name', fontsize=24)  # Larger font size for x-axis label
+    ax.set_ylabel('Classes Presence [%]', fontsize=24)   # Larger font size for y-axis label
+    ax.set_xticks(positions)
+    ax.set_xticklabels(classes, rotation=50, fontsize=16)  # Larger and rotated x-tick labels
+    ax.set_yticklabels(ax.get_yticks(), fontsize=16)  # Larger y-tick labels
+    ax.legend(fontsize=16)  # Larger legend font size
+
+    # Show the plot
+    plt.show()
+
+if __name__ == "__main__":
+    all_json = files_in_subdirs("RailNet_DT/rs19_val/jsons/", pattern = ["*.json"])
+    mask_train = files_in_subdirs("RailNet_DT/rs19_val/uint8/rs19_val/", pattern = ["*.png"])
+    masks_test = files_in_subdirs("RailNet_DT/rs19_val/uint8/test/", pattern = ["*.png"])
+    
+    objects_exported_test = export_objects_mask(masks_test, translate_dict)
+    objects_exported_train = export_objects_mask(mask_train, translate_dict)
+    
+    obj_copy = objects_exported_train.copy()
+    objects_exported_testt = {key + 7649: value for key, value in objects_exported_test.items()}
+    obj_copy.update(objects_exported_testt)
+    objects_exported_all = obj_copy
+    
+    #objects_exported = export_objects_json(all_json)
+    
+    all_keys_count,file_all_keys_count,file_unique_keys_count,unique_keys,img_count,key_not_present_count = get_stats(objects_exported_all)
+    train_keys_count,file_train_keys_count,train_unique_keys_count,unique_keys_train,img_count_train,key_not_present_count_train = get_stats(objects_exported_train)
+    test_keys_count,file_test_keys_count,test_unique_keys_count,unique_keys_test,img_count_test,key_not_present_count_test = get_stats(objects_exported_test)
+    #display_hist1(key_not_present_count)
+    #display_hist1(all_keys_count)
+    #display_hist2(objects_exported_all, unique_keys)
+    
+    dict_rel_all = {key: (value / len(all_json))*100 for key, value in all_keys_count.items()}
+    dics_rel_test = {key: (value / len(masks_test))*100 for key, value in test_keys_count.items()}
+    dict_rel_train = {key: (value / len(mask_train))*100 for key, value in train_keys_count.items()}
+
+    display_hist3(dict_rel_all,dics_rel_test,dict_rel_train)
 
     mean_general = np.array(list(file_all_keys_count.values())).mean()
     mean_unique = np.array(list(file_unique_keys_count.values())).mean()

@@ -30,12 +30,12 @@ class CustomDataset(VisionDataset):
                                 A.RandomSnow(brightness_coeff=2.5, snow_point_lower=0.2, snow_point_upper=0.8, p=1),
                                 A.RandomFog(fog_coef_lower=0.2, fog_coef_upper=0.3, alpha_coef=0.3, p=1),
                             ], p=0.3),
-                            A.OneOf([
-                                A.CoarseDropout(max_holes=100, max_height=30, max_width=30, min_height=10, min_width=10, min_holes=50, fill_value=0, p=1),
-                                A.GaussianBlur(blur_limit=(11, 21), p=1),
-                                A.GaussNoise(var_limit=(300.0, 650.0), mean=0, per_channel=True, p=1),
-                                A.ISONoise(color_shift=(0.1, 0.5), intensity=(0.6, 0.9), p=1),
-                            ], p=0.5),
+                                A.OneOf([
+                                    A.CoarseDropout(max_holes=100, max_height=30, max_width=30, min_height=10, min_width=10, min_holes=50, fill_value=0, p=1),
+                                    A.GaussianBlur(blur_limit=(11, 21), p=1),
+                                    A.GaussNoise(var_limit=(300.0, 650.0), mean=0, per_channel=True, p=1),
+                                    A.ISONoise(color_shift=(0.1, 0.5), intensity=(0.6, 0.9), p=1),
+                                ], p=0.5),
                             A.RandomResizedCrop(height=image_size[0], width=image_size[1], scale=(0.8, 1.0)),
                             ])
         elif subset == 'Valid':

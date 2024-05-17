@@ -24,6 +24,13 @@ for item in enumerate(data["data"]):
     vehicle = item[1][4]
     daytime = item[1][7]
     weather = item[1][8]
+    
+    print(img_name)
+    image = cv2.imread(os.path.join('RailNet_DT\\railway_dataset', img_name))
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    plt.imshow(image_rgb)
+    plt.show()
+    
     if vehicle not in vehicles:
         vehicles[vehicle] = 1
     else:

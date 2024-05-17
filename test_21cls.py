@@ -35,6 +35,23 @@ def load(filename, input_size=[224,224]):
     mask_pth = os.path.join(PATH_masks, filename).replace('.jpg', '.png')
     mask = cv2.imread(mask_pth, cv2.IMREAD_GRAYSCALE)
 
+    import matplotlib.pyplot as plt
+    ignore_list = [0,1,2,6,8,9,15,16,19,20]
+    for cls in ignore_list:
+        mask[mask==cls] = 255
+
+    ignore_set = set(ignore_list)
+    cls_remaining = [num for num in range(0, 22) if num not in ignore_set]
+
+    mask[mask==255] = 12
+    
+    for idx, cls in enumerate(cls_remaining):
+        mask[mask==cls] = idx
+
+    mask = mask+30
+    plt.imshow(mask, cmap='gray')
+    plt.show()
+    
     # LOAD THE IMAGE
     #im_jpg = cv2.resize(image, (224, 224), interpolation=cv2.INTER_NEAREST)
     #image = torch.tensor(im_jpg, dtype=torch.float32)
@@ -191,7 +208,6 @@ if __name__ == "__main__":
         
         #if images_computed > 50:
         #    break
-        
         image_norm, image, mask, id_map_gt, model = load(filename, image_size)
 
         # INFERENCE + SOFTMAX
@@ -212,10 +228,6 @@ if __name__ == "__main__":
         confidence_scores = F.softmax(output, dim=1).cpu().detach().numpy().squeeze()
         id_map = np.argmax(confidence_scores, axis=0).astype(np.uint8)
         id_map = image_morpho(id_map)
-        
-        import matplotlib.pyplot as plt
-        plt.imshow(id_map)
-        plt.show()
         
         # mAP
         map,classes_ap  = compute_map_cls(id_map_gt, id_map, classes_ap)

@@ -56,24 +56,33 @@ def export_objects_json(json_files):
 
     return objects
 
-def export_objects_mask(mask_files, dict):
+def export_objects_mask(mask_files, dict, global_pixel_count):
     f_index = 0
     objects = {}
     for mask_dir in mask_files:
         object_list = {}
         with Image.open(mask_dir) as img:
                 img_array = np.array(img)
-                unique_ids = np.unique(img_array)
+                unique_ids, counts = np.unique(img_array, return_counts=True)
                 if 255 in unique_ids:
                     unique_ids[list(unique_ids).index(255)] = 19
                 object_list = {dict[uid]: 1 for uid in unique_ids}
-        
+
+                for id,count in zip(unique_ids,counts):
+                    if id in global_pixel_count.keys():
+                        global_pixel_count[id] += count
+                    else:
+                        global_pixel_count[id] = count
+                        
+                if 3 in unique_ids:
+                    print(mask_dir)
+                    
         objects[f_index] = object_list
         f_index += 1
         if f_index % 100 == 0:
             print(f_index)
 
-    return objects
+    return objects, global_pixel_count
 
 def get_stats(objects_exported):
     all_keys_count = {}
@@ -114,7 +123,7 @@ def display_hist1(data_dict):
     fig, ax = plt.subplots()
 
     # Get the keys and values from the dictionary
-    keys = list(data_dict.keys())
+    keys = translate_dict.values()
     values = list(data_dict.values())
 
     # Plot the histogram
@@ -123,18 +132,29 @@ def display_hist1(data_dict):
     # Add text to each bar
     for i, rect in enumerate(rects):
         height = rect.get_height()
-        ax.text(rect.get_x() + rect.get_width()/2., height+200, str(values[i]), ha='center', va='center', color='black')
+        ax.text(rect.get_x() + rect.get_width()/2., height+90000000, format_number(values[i]), ha='center', va='center', color='black')
 
+    
     # Set the labels and title
-    ax.set_xlabel('Items')
-    ax.set_ylabel('Frequency')
-    ax.set_title('Frequency of objects not present at pictures')
-
-    # Rotate the x-axis labels by 90 degrees
-    plt.xticks(rotation=50)
+    ax.set_xlabel('Class Name', fontsize=24)
+    ax.set_ylabel('Class Volume [px]', fontsize=24)
+    ax.set_xticklabels(keys, rotation=50, fontsize=16)
+    ax.tick_params(axis='y', labelsize=16)  # Set y-axis tick label font size
 
     # Show the plot
+    plt.tight_layout()
     plt.show()
+
+def format_number(num):
+    if num < 1000:
+        return str(num)
+    elif num < 1000000:
+        return f"{num/1000:.1f}K"  # Thousands
+    elif num < 1000000000:
+        return f"{num/1000000:.1f}M"  # Millions
+    else:
+        return f"{num/1000000000:.1f}B"  # Billions
+
 
 def display_hist2(main_dict, unique_keys):
     # Create a list of keys from main_dict
@@ -261,8 +281,13 @@ if __name__ == "__main__":
     mask_train = files_in_subdirs("RailNet_DT/rs19_val/uint8/rs19_val/", pattern = ["*.png"])
     masks_test = files_in_subdirs("RailNet_DT/rs19_val/uint8/test/", pattern = ["*.png"])
     
-    objects_exported_test = export_objects_mask(masks_test, translate_dict)
-    objects_exported_train = export_objects_mask(mask_train, translate_dict)
+    global_pixel_count = {}
+    
+    objects_exported_test, global_pixel_count = export_objects_mask(masks_test, translate_dict, global_pixel_count)
+    objects_exported_train, global_pixel_count = export_objects_mask(mask_train, translate_dict, global_pixel_count)
+    
+    sorted_dict = {k: global_pixel_count[k] for k in sorted(global_pixel_count)}
+    display_hist1(sorted_dict)
     
     obj_copy = objects_exported_train.copy()
     objects_exported_testt = {key + 7649: value for key, value in objects_exported_test.items()}
@@ -274,9 +299,9 @@ if __name__ == "__main__":
     all_keys_count,file_all_keys_count,file_unique_keys_count,unique_keys,img_count,key_not_present_count = get_stats(objects_exported_all)
     train_keys_count,file_train_keys_count,train_unique_keys_count,unique_keys_train,img_count_train,key_not_present_count_train = get_stats(objects_exported_train)
     test_keys_count,file_test_keys_count,test_unique_keys_count,unique_keys_test,img_count_test,key_not_present_count_test = get_stats(objects_exported_test)
-    #display_hist1(key_not_present_count)
-    #display_hist1(all_keys_count)
-    #display_hist2(objects_exported_all, unique_keys)
+    display_hist1(key_not_present_count)
+    display_hist1(all_keys_count)
+    display_hist2(objects_exported_all, unique_keys)
     
     dict_rel_all = {key: (value / len(all_json))*100 for key, value in all_keys_count.items()}
     dics_rel_test = {key: (value / len(masks_test))*100 for key, value in test_keys_count.items()}
@@ -292,7 +317,7 @@ if __name__ == "__main__":
     max_unique_idx =  list(file_all_keys_count.values()).index(max_unique)
     print(max_unique)
     print(max_unique_idx)
-    most_obj = objects_exported[990]
+    most_obj = objects_exported_all[990]
     print(most_obj)
     min_unique = np.array(list(file_unique_keys_count.values())).min()
     min_general = np.array(list(file_all_keys_count.values())).min()

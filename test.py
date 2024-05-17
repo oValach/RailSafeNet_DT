@@ -15,14 +15,14 @@ PATH_jpgs = 'RailNet_DT/rs19_val/jpgs/test'
 PATH_jpg = 'RailNet_DT/rs19_val/jpgs/test/rs07700.jpg'
 PATH_mask = 'RailNet_DT/rs19_val/uint8/test/rs07700.png'
 PATH_masks = 'RailNet_DT/rs19_val/uint8/test'
-PATH_model = 'RailNet_DT/models/modelchp_85_100_0.0002865237576874738_2_0.606629.pth'
+PATH_model = 'RailNet_DT/models/modelchp_zesty-sweep-1_80_0.600687.pth'
 #model_300_0.001_13_16_dd_adamw.pth, model_300_0.005_13_32_fp_adamw.pth, model_300_0.01_13_16_wh.pth
 #modelchp_170_300_0.001_32_0.671144_aug.pth!, modelchp_105_200_0.001_32_0.725929_rf.pth, modelchp_185_200_0.001_32_0.788379_robustfire_noaug_480x480.pth
 
-def load(filename, PATH_jpgs, path_model, input_size=[224,224], dataset_type='rs19val', item = None):
-    #transform_resize = A.Compose([
-    #                A.RandomResizedCrop(height=input_size[0], width=input_size[1], scale=(0.8, 1.0)),
-    #                ])
+def load(filename, PATH_jpgs, input_size=[224,224], dataset_type='rs19val', item = None):
+    transform_resize = A.Compose([
+                    #A.RandomResizedCrop(height=input_size[0], width=input_size[1], scale=(0.8, 1.0)),
+                    ])
     transform_img = A.Compose([
                     A.Resize(height=input_size[0], width=input_size[1], interpolation=cv2.INTER_NEAREST),
                     A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
@@ -36,10 +36,15 @@ def load(filename, PATH_jpgs, path_model, input_size=[224,224], dataset_type='rs
     if dataset_type == 'pilsen':
         mask_pth = item[1][1]["masks"]["ground_truth"]["path"]
         mask_pth = os.path.join(PATH_jpgs, mask_pth)
-    else:
+    elif dataset_type == 'railsem19':
         mask_pth = os.path.join(PATH_masks, filename).replace('.jpg', '.png')
-    image = cv2.imread(os.path.join(PATH_jpgs, filename))
+    else:
+        mask_pth = "RailNet_DT/rs19_val/jpgs/placeholder_mask.png"
+        
+    image_in = cv2.imread(os.path.join(PATH_jpgs, filename))
     mask = cv2.imread(mask_pth, cv2.IMREAD_GRAYSCALE)
+    if dataset_type == 'testdata':
+        image_in = cv2.resize(image_in, (1920, 1080))
 
     # LOAD THE IMAGE
     #im_jpg = cv2.resize(image, (224, 224), interpolation=cv2.INTER_NEAREST)
@@ -51,9 +56,9 @@ def load(filename, PATH_jpgs, path_model, input_size=[224,224], dataset_type='rs
     #id_map_gt = cv2.resize(mask_gr, (224, 224), interpolation=cv2.INTER_NEAREST)
     #mask = torch.tensor(id_map_gt, dtype=torch.float32).long()
 
-    #transformed = transform_resize(image=image, mask=mask)
-    #image = transformed['image']
-    #mask = transformed['mask']
+    transformed = transform_resize(image=image_in, mask=mask)
+    image = transformed['image']
+    mask = transformed['mask']
     
     image_tr = transform_img(image=image)['image']
     image_tr = image_tr.unsqueeze(0)
@@ -61,12 +66,16 @@ def load(filename, PATH_jpgs, path_model, input_size=[224,224], dataset_type='rs
     mask = transform_mask(image=mask)['image']
     mask_id_map = np.array(mask.cpu().detach().numpy(), dtype=np.uint8)
     
-    # LOAD THE MODEL
-    model = torch.load(path_model, map_location=torch.device('cpu'))
-    model, image_tr = model.cpu(), image_tr.cpu()
-    model.eval()
+    image_tr = image_tr.cpu()
     
-    return image_tr, image_vis, mask, mask_id_map, model
+    return image_tr, image_vis, image_in, mask, mask_id_map
+
+def load_model(path_model):
+    
+    model = torch.load(path_model, map_location=torch.device('cpu'))
+    model = model.cpu()
+    model.eval()
+    return model
 
 def remap_ignored_clss(id_map):
     ignore_list = [0,1,2,6,8,9,15,16,19,20]
@@ -234,7 +243,7 @@ if __name__ == "__main__":
     for filename in os.listdir(PATH_jpgs):
         images_computed += 1
         
-        vis = True
+        vis = False
         to_break = False
         image_size = [1024,1024]
         
@@ -244,16 +253,11 @@ if __name__ == "__main__":
         
         model_type = "segformer" #"deeplab"
         dataset_type = 'rs19val'
-        #filename = 'rs07848.jpg'
-        image_norm, image, mask, id_map_gt, model = load(filename, PATH_jpgs, PATH_model, image_size, dataset_type)
-
+        filename = 'rs07680.jpg'
+        image_norm, image, mask, id_map_gt = load(filename, PATH_jpgs, image_size, dataset_type)
+        model = load_model(PATH_model)
         # INFERENCE + SOFTMAX
         id_map = process(model, image_norm, mask, model_type)
-        
-        import matplotlib.pyplot as plt
-        plt.imshow(id_map)
-        plt.show()
-        
         
         # mAP
         id_map_gt = remap_ignored_clss(id_map_gt)

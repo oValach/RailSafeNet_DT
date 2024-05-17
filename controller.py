@@ -11,7 +11,7 @@ import matplotlib.path as mplPath
 from matplotlib.path import Path
 import matplotlib.patches as patches
 from ultralyticsplus import YOLO
-from test import load, process
+from test import load, load_model, process
 
 PATH_jpgs = 'RailNet_DT/rs19_val/jpgs/test'
 PATH_model_seg = 'RailNet_DT/models/modelchp_85_100_0.0002865237576874738_2_0.606629.pth'
@@ -19,6 +19,15 @@ PATH_model_det = 'ultralyticsplus/yolov8s'
 PATH_base = 'RailNet_DT/railway_dataset/'
 eda_path = "RailNet_DT/railway_dataset/eda_table.table.json"
 data_json = json.load(open(eda_path, 'r'))
+
+def load_yolo(PATH_model):
+        model = YOLO(PATH_model)
+
+        model.overrides['conf'] = 0.25  # NMS confidence threshold
+        model.overrides['iou'] = 0.45  # NMS IoU threshold
+        model.overrides['agnostic_nms'] = False  # NMS class-agnostic
+        model.overrides['max_det'] = 1000  # maximum number of detections per image
+        return model
 
 def find_extreme_y_values(arr, values=[0, 6]):
         """
@@ -37,7 +46,7 @@ def find_extreme_y_values(arr, values=[0, 6]):
         y_indices = np.nonzero(rows_with_values)[0]  # Directly finding non-zero (True) indices
         
         if y_indices.size == 0:
-                return None  # Early return if values not found
+                return None, None  # Early return if values not found
         
         return y_indices[0], y_indices[-1]
 
@@ -84,10 +93,10 @@ def filter_crossings(image, edges_dict):
                         if start - merged[-1][1] < 50:
                                 
                                 key_up = max([0, key-10])
-                                key_down = min([1079, key+10])
+                                key_down = min([image.shape[0]-1, key+10])
                                 if key_up == 0:
                                         key_up = key+20
-                                if key_down == 1079:
+                                if key_down == image.shape[0]-1:
                                         key_down = key-20
                                 
                                 edges_to_test_slope1 = robust_edges(image, [key_up], values=[0, 6], min_width=19)
@@ -264,61 +273,61 @@ def find_rail_sides(img, edges_dict):
 
 def robust_rail_sides(border, threshold=7):
         border = np.array(border)
-        
-        # delete borders found on the bottom side of the image
-        border = border[border[:, 1] != 1079]
-        
-        
-        steps_x = np.diff(border[:, 0])
-        median_step = np.median(np.abs(steps_x))
-        
-        threshold_step = np.abs(threshold*np.abs(median_step))
-        treshold_overcommings = abs(steps_x) > abs(threshold_step)
-        
-        flags = []
-        
-        if True not in treshold_overcommings:
-                return border, flags, []
-        else:
-                overcommings_indices = [i for i, element in enumerate(treshold_overcommings) if element == True]
-                if overcommings_indices and np.all(np.diff(overcommings_indices) == 1):
-                        overcommings_indices = [overcommings_indices[0]]
+        if border.size > 0:
+                # delete borders found on the bottom side of the image
+                border = border[border[:, 1] != 1079]
                 
-                filtered_border = border
+                steps_x = np.diff(border[:, 0])
+                median_step = np.median(np.abs(steps_x))
                 
-                previously_deleted = []
-                for i in overcommings_indices:
-                        for item in previously_deleted:
-                                if item[0] < i:
-                                        i -= item[1]
-                        first_part = filtered_border[:i+1]
-                        second_part = filtered_border[i+1:]
-                        if len(second_part)<2:
-                                filtered_border = first_part
-                                previously_deleted.append([i,len(second_part)])
-                        elif len(first_part)<2:
-                                filtered_border = second_part
-                                previously_deleted.append([i,len(first_part)])
-                        else:
-                                first_b, _, deleted_first = robust_rail_sides(first_part)
-                                second_b, _, _ = robust_rail_sides(second_part)
-                                filtered_border = np.concatenate((first_b,second_b), axis=0)
-                                
-                                if deleted_first:
-                                        for deleted_item in deleted_first:
-                                                if deleted_item[0]<=i:
-                                                        i -= deleted_item[1]
+                threshold_step = np.abs(threshold*np.abs(median_step))
+                treshold_overcommings = abs(steps_x) > abs(threshold_step)
+                
+                flags = []
+                
+                if True not in treshold_overcommings:
+                        return border, flags, []
+                else:
+                        overcommings_indices = [i for i, element in enumerate(treshold_overcommings) if element == True]
+                        if overcommings_indices and np.all(np.diff(overcommings_indices) == 1):
+                                overcommings_indices = [overcommings_indices[0]]
+                        
+                        filtered_border = border
+                        
+                        previously_deleted = []
+                        for i in overcommings_indices:
+                                for item in previously_deleted:
+                                        if item[0] < i:
+                                                i -= item[1]
+                                first_part = filtered_border[:i+1]
+                                second_part = filtered_border[i+1:]
+                                if len(second_part)<2:
+                                        filtered_border = first_part
+                                        previously_deleted.append([i,len(second_part)])
+                                elif len(first_part)<2:
+                                        filtered_border = second_part
+                                        previously_deleted.append([i,len(first_part)])
+                                else:
+                                        first_b, _, deleted_first = robust_rail_sides(first_part)
+                                        second_b, _, _ = robust_rail_sides(second_part)
+                                        filtered_border = np.concatenate((first_b,second_b), axis=0)
                                         
-                                flags.append(i)
-                
-                return filtered_border, flags, previously_deleted
+                                        if deleted_first:
+                                                for deleted_item in deleted_first:
+                                                        if deleted_item[0]<=i:
+                                                                i -= deleted_item[1]
+                                                
+                                        flags.append(i)
+                        return filtered_border, flags, previously_deleted
+        else:
+                return border, [], []
 
-def find_dist_from_edges(image, edges_dict, left_border, right_border, real_life_width_mm, real_life_target_mm, mark_value=30):
+def find_dist_from_edges(id_map, image, edges_dict, left_border, right_border, real_life_width_mm, real_life_target_mm, mark_value=30):
         """
         Mark regions representing a real-life distance (e.g., 2 meters) to the left and right from the furthest edges.
         
         Parameters:
-        - arr: 2D NumPy array representing the image.
+        - arr: 2D NumPy array representing the id_map.
         - edges_dict: Dictionary with y-levels as keys and lists of (start, end) tuples for edges.
         - real_life_width_mm: The real-world width in millimeters that the average sequence width represents.
         - real_life_target_mm: The real-world distance in millimeters to mark from the edges.
@@ -334,11 +343,10 @@ def find_dist_from_edges(image, edges_dict, left_border, right_border, real_life
         scale_factors = {k: real_life_width_mm / v for k, v in diffs_width.items()}
         # Converting the real-life target distance to pixels
         target_distances_px = {k: int(real_life_target_mm / v) for k, v in scale_factors.items()}
-
-        mark=1
         
         # Mark the regions representing the target distance to the left and right from the furthest edges
         end_points_left = {}
+        region_levels_left = []
         for point in left_border:
                 min_edge = point[0]
                 
@@ -347,26 +355,31 @@ def find_dist_from_edges(image, edges_dict, left_border, right_border, real_life
                 left_mark_start = min_edge - int(target_distances_px[point[1]])
                 end_points_left[point[1]] = left_mark_start
                 
-                if mark:
-                        # Mark the left region
-                        if left_mark_start < min_edge:
-                                image[point[1], left_mark_start:min_edge] = mark_value
-        
+                # Left region points
+                if left_mark_start < min_edge:
+                        y_values = np.arange(left_mark_start, min_edge)
+                        x_values = np.full_like(y_values, point[1])
+                        region_line = np.column_stack((x_values, y_values))
+                        region_levels_left.append(region_line)
+                        
         end_points_right = {}
+        region_levels_right = []
         for point in right_border:
                 max_edge = point[0]
                 
                 # Ensure we stay within the image bounds
-                right_mark_end = min(image.shape[1], max_edge + int(target_distances_px[point[1]]))
-                if right_mark_end != image.shape[1]:
+                right_mark_end = min(id_map.shape[1], max_edge + int(target_distances_px[point[1]]))
+                if right_mark_end != id_map.shape[1]:
                         end_points_right[point[1]] = right_mark_end
-                
-                if mark:
-                        # Mark the right region
-                        if max_edge < right_mark_end:
-                                image[point[1], max_edge:right_mark_end] = mark_value
 
-        return image, end_points_left, end_points_right
+                # Right region points
+                if max_edge < right_mark_end:
+                        y_values = np.arange(max_edge, right_mark_end)
+                        x_values = np.full_like(y_values, point[1])
+                        region_line = np.column_stack((x_values, y_values))
+                        region_levels_right.append(region_line)
+
+        return id_map, end_points_left, end_points_right, region_levels_left, region_levels_right
 
 def bresenham_line(x0, y0, x1, y1):
         """
@@ -412,9 +425,6 @@ def interpolate_end_points(end_points_dict, flags):
                 if np.any(line[:, 0] < 0):
                         line = line[line[:, 0] > 0]
                 line_arr = line_arr + list(line)
-        
-        if line_arr == []:
-                print("line_arr was empty when interpolating")
         
         return line_arr
 
@@ -502,63 +512,57 @@ def extrapolate_borders(dist_marked_id_map, border_l, border_r, lowest_y):
         
         return border_l, border_r
 
-def find_zone_border(image, edges, irl_width_mm=1435, irl_target_mm=1000, lowest_y = 0):
+def find_zone_border(id_map, image, edges, irl_width_mm=1435, irl_target_mm=1000, lowest_y = 0):
         
-        left_border, right_border, flags_l, flags_r = find_rail_sides(image, edges)
+        left_border, right_border, flags_l, flags_r = find_rail_sides(id_map, edges)
         
-        dist_marked_id_map, end_points_left, end_points_right = find_dist_from_edges(image, edges, left_border, right_border, irl_width_mm, irl_target_mm)
+        dist_marked_id_map, end_points_left, end_points_right, left_region, right_region = find_dist_from_edges(id_map, image, edges, left_border, right_border, irl_width_mm, irl_target_mm)
         
         border_l = interpolate_end_points(end_points_left, flags_l)
         border_r = interpolate_end_points(end_points_right, flags_r)
         
         border_l, border_r = extrapolate_borders(dist_marked_id_map, border_l, border_r, lowest_y)
         
-        return [border_l, border_r]
+        return [border_l, border_r],[left_region, right_region]
 
 def get_clues(segmentation_mask, number_of_clues):
         
         lowest, highest = find_extreme_y_values(segmentation_mask)
-        clue_step = int((highest - lowest) / number_of_clues+1)
-        clues = []
-        for i in range(number_of_clues):
-                clues.append(highest - (i*clue_step))
-        clues.append(lowest+int(0.5*clue_step))
-                
-        return clues
+        if lowest is not None and highest is not None:
+                clue_step = int((highest - lowest) / number_of_clues+1)
+                clues = []
+                for i in range(number_of_clues):
+                        clues.append(highest - (i*clue_step))
+                clues.append(lowest+int(0.5*clue_step))
+                        
+                return clues
+        else:
+                return []
 
-def border_handler(id_map, edges, target_distances):
+def border_handler(id_map, image, edges, target_distances):
         
         lowest, _ = find_extreme_y_values(id_map)
         borders = []
+        regions = []
         for target in target_distances:
-                borders.append(find_zone_border(id_map, edges, irl_target_mm=target, lowest_y = lowest))
-                for border in borders:
-                        for point in border[0]:
-                                id_map[point[1],point[0]] = 30
-                        for point in border[1]:
-                                id_map[point[1],point[0]] = 30
+                borders_regions = find_zone_border(id_map, image, edges, irl_target_mm=target, lowest_y = lowest)
+                borders.append(borders_regions[0])
+                regions.append(borders_regions[1])
                 
-        return borders, id_map
+        return borders, id_map, regions
 
-def segment(image_size, filename, PATH_jpgs, PATH_model, dataset_type, item=None):
-        image_norm, _, mask, _, model = load(filename, PATH_jpgs, PATH_model, image_size, dataset_type=dataset_type, item=item)
-        id_map = process(model, image_norm, mask, model_type)
+def segment(model_seg, image_size, filename, PATH_jpgs, dataset_type, model_type, item=None):
+        image_norm, _, image, mask, _ = load(filename, PATH_jpgs, image_size, dataset_type=dataset_type, item=item)
+        id_map = process(model_seg, image_norm, mask, model_type)
         id_map = cv2.resize(id_map, [1920,1080], interpolation=cv2.INTER_NEAREST)
-        return id_map
+        return id_map, image
 
-def detect(PATH_model, filename_img, PATH_jpgs):
-        
-        model = YOLO(PATH_model)
-
-        model.overrides['conf'] = 0.25  # NMS confidence threshold
-        model.overrides['iou'] = 0.45  # NMS IoU threshold
-        model.overrides['agnostic_nms'] = False  # NMS class-agnostic
-        model.overrides['max_det'] = 1000  # maximum number of detections per image
+def detect(model_det, filename_img, PATH_jpgs):
         
         image = cv2.imread(os.path.join(PATH_jpgs, filename_img))
-        results = model.predict(image)
+        results = model_det.predict(image)
 
-        return results, model, image
+        return results, model_det, image
 
 def manage_detections(results, model):
         names = model.model.names
@@ -607,7 +611,11 @@ def compute_detection_borders(borders, output_dims=[1080,1920]):
                 
                 interpolated_top = bresenham_line(endpoints_l[1][0],endpoints_l[1][1],endpoints_r[1][0],endpoints_r[1][1])
 
-                if (endpoints_l[0][0] == 0 and endpoints_r[0][1] == det_height) or (endpoints_l[0][0] == 0 and endpoints_r[0][1] == det_height-1):
+                zero_range = [0,1,2,3]
+                height_range = [det_height,det_height-1,det_height-2,det_height-3]
+                width_range = [det_width,det_width-1,det_width-2,det_width-3]
+
+                if (endpoints_l[0][0] in zero_range and endpoints_r[0][1] in height_range):
                         y_values = np.arange(endpoints_l[0][1], det_height)
                         x_values = np.full_like(y_values, 0)
                         bottom1 = np.column_stack((x_values, y_values))
@@ -618,7 +626,7 @@ def compute_detection_borders(borders, output_dims=[1080,1920]):
                         
                         interpolated_bottom = np.vstack((bottom1, bottom2))
                         
-                elif (endpoints_l[0][1] == det_height and endpoints_r[0][0] == det_width) or (endpoints_l[0][1] == det_height-1 and endpoints_r[0][0] == det_width):
+                elif (endpoints_l[0][1] in height_range and endpoints_r[0][0] in width_range):
                         y_values = np.arange(endpoints_r[0][1], det_height)
                         x_values = np.full_like(y_values, det_width)
                         bottom1 = np.column_stack((x_values, y_values))
@@ -629,7 +637,7 @@ def compute_detection_borders(borders, output_dims=[1080,1920]):
                         
                         interpolated_bottom = np.vstack((bottom1, bottom2))
                         
-                elif endpoints_l[0][0] == 0 and endpoints_r[0][0] == det_width:
+                elif endpoints_l[0][0] in zero_range and endpoints_r[0][0] in width_range:
                         y_values = np.arange(endpoints_l[0][1], det_height)
                         x_values = np.full_like(y_values, 0)
                         bottom1 = np.column_stack((x_values, y_values))
@@ -660,7 +668,6 @@ def classify_detections(boxes_moving, boxes_stationary, borders, img_dims, outpu
         borders = compute_detection_borders(borders,output_dims)
         
         boxes_info = []
-        #boxes_moving[0.0].append([250,1000,20,40])
         
         if boxes_moving or boxes_stationary:
                 if boxes_moving:
@@ -675,7 +682,8 @@ def classify_detections(boxes_moving, boxes_stationary, borders, img_dims, outpu
                                         criticality = -1
                                         color = None
                                         for i,border in enumerate(reversed(borders)):
-                                                complete_border = np.vstack((border[0], border[1], border[2], border[3]))
+                                                border_nonempty = [np.array(arr) for arr in border if np.array(arr).size > 0]
+                                                complete_border = np.vstack((border_nonempty))
                                                 
                                                 instance_border_path = mplPath.Path(np.array(complete_border))
                                                 is_inside_borders = instance_border_path.contains_point((x,y))
@@ -687,7 +695,7 @@ def classify_detections(boxes_moving, boxes_stationary, borders, img_dims, outpu
                                         if criticality == -1:
                                                 color = colors[3]
                                                 
-                                        boxes_info.append([item, criticality, color, [x, y],1])
+                                        boxes_info.append([item, criticality, color, [x, y], [w, h], 1])
                                                 
                 if boxes_stationary:
                         for item, coords in boxes_stationary.items():
@@ -702,6 +710,7 @@ def classify_detections(boxes_moving, boxes_stationary, borders, img_dims, outpu
                                         color = None
                                         is_inside_borders = 0
                                         for i,border in enumerate(reversed(borders), start=len(borders) - 1):
+                                                border_nonempty = [np.array(arr) for arr in border if np.array(arr).size > 0]
                                                 complete_border = np.vstack((border[0], border[1], border[2], border[3]))
                                                 instance_border_path = mplPath.Path(np.array(complete_border))
                                                 is_inside_borders = instance_border_path.contains_point((x,y))
@@ -713,7 +722,7 @@ def classify_detections(boxes_moving, boxes_stationary, borders, img_dims, outpu
                                         if criticality == -1:
                                                 color = colors[3]
                                                 
-                                        boxes_info.append([item, criticality, color, [x, y],0])
+                                        boxes_info.append([item, criticality, color, [x, y], [w, h], 0])
         
                 return boxes_info
         
@@ -722,8 +731,7 @@ def classify_detections(boxes_moving, boxes_stationary, borders, img_dims, outpu
                 return []
 
 def draw_classification(classification, id_map):
-        
-        if classification:
+        if classification:                
                 for box in classification:
                         x,y = box[3]
                         mark_value = 30
@@ -737,25 +745,123 @@ def draw_classification(classification, id_map):
         else:
                 return
 
-def show_result(classification, id_map, names):
-        if classification:
-                plt.imshow(id_map)
-                for box in classification:
-                        x,y = box[3]
-                        name = names[box[0]]
-                        color = box[2]
-                        plt.text(x, y+10, name, color=color, fontsize=10, ha='center', va='center')
-
-                plt.show()
-        else:
-                return
-
-def run(image_size, filepath_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis, item=None, num_ys = 15):
-
-        segmentation_mask = segment(image_size, filepath_img, PATH_jpgs, PATH_model_seg, dataset_type, item)
-        print('File: {}'.format(filepath_img))
+def show_result(classification, id_map, names, borders, image, regions, file_index):
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = cv2.resize(image, (id_map.shape[1], id_map.shape[0]), interpolation = cv2.INTER_LINEAR)
+        fig = plt.figure(figsize=(16, 9), dpi=400)
         
-        output_size = segmentation_mask.shape
+        if classification:
+                for box in classification:
+                        
+                        boxes = True
+                        cx,cy = box[3]
+                        name = names[box[0]]
+                        if boxes:
+                                plt.imshow(image, cmap='gray')
+                                w,h = box[4]
+                                x = cx - w / 2
+                                y = cy - h / 2
+                                rect = patches.Rectangle((x, y), w, h, linewidth=2, edgecolor=box[2], facecolor='none')
+                                
+                                ax = plt.gca()
+                                ax.add_patch(rect)
+                                plt.text(x, y-17, name, color='black', fontsize=10, ha='center', va='center', fontweight='bold', bbox=dict(facecolor=box[2], edgecolor='none', alpha=1))
+                        else:
+                                plt.imshow(id_map, cmap='gray')
+                                plt.text(cx, cy+10, name, color=box[2], fontsize=10, ha='center', va='center', fontweight='bold')
+
+        for region in regions:
+                for side in region:
+                        for line in side:
+                                line = np.array(line)
+                                plt.plot(line[:,1], line[:,0] ,'-', color='lightgrey', marker=None, linewidth=0.5)
+                                plt.ylim(0, 1080)
+                                plt.xlim(0, 1920)
+                                plt.gca().invert_yaxis()
+
+        colors = ['yellow','orange','red']
+        borders.reverse()
+        for i,border in enumerate(borders):
+                for side in border:
+                        side = np.array(side)
+                        if side.size > 0:
+                                plt.plot(side[:,0],side[:,1] ,'-', color=colors[i], marker=None, linewidth=0.6) #color=colors[i]
+                                plt.ylim(0, 1080)
+                                plt.xlim(0, 1920)
+                                plt.gca().invert_yaxis()
+                
+        #plt.show()
+        plt.tight_layout()
+        plt.savefig(f'Grafika/Video_export/frames_estimated/frame_{file_index:04d}.jpg', format='jpg', bbox_inches='tight')
+        plt.close()
+        print('Frame saved successfully.')
+        
+        return
+
+def save_result(classification, id_map, names, borders, image, regions, file_index):
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = cv2.resize(image, (id_map.shape[1], id_map.shape[0]), interpolation = cv2.INTER_LINEAR)
+        
+        if classification:
+                for box in classification:
+                        cx,cy = box[3]
+                        name = names[box[0]]
+                        w,h = box[4]
+                        x = cx - w / 2
+                        y = cy - h / 2
+                        start_point = (x, y-20)  # Coordinates of the rectangle's top left corner
+                        end_point = (x+50, y)  # Coordinates of the rectangle's bottom right corner
+                        color = (255, 0, 0)  # Blue color in BGR
+                        thickness = -1  # Solid fill
+
+                        # Add a rectangle to the image
+                        cv2.rectangle(image, start_point, end_point, color, thickness)
+
+                        # Define text parameters
+                        text = "Your Text Here"
+                        font_scale = 1
+                        font = cv2.FONT_HERSHEY_SIMPLEX
+                        text_color = (0, 0, 0)  # Black color in BGR
+                        text_thickness = 2
+                        text_location = (x, y - 17)  # Adjust location as needed
+
+                        # Add text to the image
+                        cv2.putText(image, name, text_location, font, font_scale, text_color, text_thickness, cv2.LINE_AA)
+
+                        # Save the image
+                        cv2.imwrite('output.jpg', image)
+
+        colors = ['yellow','orange','red']
+        borders.reverse()
+        for i,border in enumerate(borders):
+                for side in border:
+                        side = np.array(side)
+                        plt.plot(side[:,0],side[:,1] ,'-', color=colors[i], marker=None, linewidth=0.6) #color=colors[i]
+                        plt.ylim(0, 1080)
+                        plt.xlim(0, 1920)
+                        plt.gca().invert_yaxis()
+                
+        for region in regions:
+                for side in region:
+                        for line in side:
+                                line = np.array(line)
+                                plt.plot(line[:,1], line[:,0] ,'-', color='lightgrey', marker=None, linewidth=0.5)
+                                plt.ylim(0, 1080)
+                                plt.xlim(0, 1920)
+                                plt.gca().invert_yaxis()
+                
+        #plt.show()
+        plt.tight_layout()
+        plt.savefig(f'Grafika/Video_export/frames_estimated/frame_{file_index:04d}.jpg', format='jpg', bbox_inches='tight')
+        plt.close()
+        print('Frame saved successfully.')
+        
+        return
+
+def run(model_seg, model_det, image_size, filepath_img, PATH_jpgs, dataset_type, model_type, target_distances, file_index, vis, item=None, num_ys = 15):
+
+        segmentation_mask, image = segment(model_seg, image_size, filepath_img, PATH_jpgs, dataset_type, model_type, item)
+        print('File: {}'.format(filepath_img))
         
         # Border search
         clues = get_clues(segmentation_mask, num_ys)
@@ -763,39 +869,56 @@ def run(image_size, filepath_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dat
         edges = find_edges(segmentation_mask, clues, min_width=0)
         #id_map_marked = mark_edges(segmentation_mask, edges)
         
-        borders, id_map = border_handler(segmentation_mask, edges, target_distances)
+        borders, id_map, regions = border_handler(segmentation_mask, image, edges, target_distances)
         
         # Detection
-        results, model, image = detect(PATH_model_det, filepath_img, PATH_jpgs)
+        results, model, image = detect(model_det, filepath_img, PATH_jpgs)
         boxes_moving, boxes_stationary = manage_detections(results, model)
         
-        classification = classify_detections(boxes_moving, boxes_stationary, borders, image.shape, output_dims=output_size)
+        classification = classify_detections(boxes_moving, boxes_stationary, borders, image.shape, output_dims=segmentation_mask.shape)
         
-        draw_classification(classification, id_map)
-        if classification:
-                show_result(classification, id_map, model.names)
-        else:
-                if vis:
-                        plt.imshow(segmentation_mask)
-                        plt.title('Image with no objects detected')
-                        plt.show()
+        #draw_classification(classification, id_map)
+        #save_result(classification, id_map, model.names, borders, image, regions, file_index)
+        show_result(classification, id_map, model.names, borders, image, regions, file_index)
 
 if __name__ == "__main__":
 
-        dataset_type = 'railsem19' #railsem19 or pilsen
-        vis = True
-        image_size = [1024,1024]
+        data_type = 'testdata' #railsem19, pilsen or testdata
         model_type = "segformer" #segformer or deeplab
-        target_distances = [5400,6500,8000]
+        vis = False
+        image_size = [1024,1024]
+        target_distances = [650,1000,2000] #[600,1000,2000] [4000,5500,6500] [2000,3000,4000]
         num_ys = 10
         
-        if dataset_type == 'pilsen':
+        if data_type == 'pilsen':
+                file_index = 0
+                model_seg = load_model(PATH_model_seg)
+                model_det = load_yolo(PATH_model_det)
                 for item in enumerate(data_json["data"]):
                         filepath_img = item[1][1]["path"]
-                        #filepath_img = 'media/images/44aabd7ea3e4a32e034f/frame_132280.png'
+                        filepath_img = 'media/images/54aab9736c550dd3de74/frame_0025840.png' #fav
+                        #filepath_img = 'media/images/f00ccbec00af1e356f56/frame_0022040.png'
                         # segmentace - frame_121440.png,frame_121560.png,frame_123320.png,frame_125400.png,frame_127000.png,frame_128040.png
-                        run(image_size, filepath_img, PATH_base, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=vis, item=item, num_ys=num_ys)
-        else:
+                        run(model_seg, model_det, image_size, filepath_img, PATH_base, data_type, model_type, target_distances, file_index, vis=vis, item=item, num_ys=num_ys)
+        elif data_type == 'railsem19':
+                file_index = 0
+                model_seg = load_model(PATH_model_seg)
+                model_det = load_yolo(PATH_model_det)
                 for filename_img in os.listdir(PATH_jpgs):
-                        #filename_img = "rs07898.jpg" #rs07659 55 rs07718.jpg rs07662.jpg - rs07898.jpg (priklad s lidmi pro 5400,6500,8000)
-                        run(image_size, filename_img, PATH_jpgs, PATH_model_seg, PATH_model_det, dataset_type, target_distances, vis=vis, item=None, num_ys=num_ys)
+                        filename_img = "rs07996.jpg" #rs07659 55 rs07718.jpg rs07662.jpg - rs07898.jpg (priklad s lidmi pro 5400,6500,8000)
+                        run(model_seg, model_det, image_size, filename_img, PATH_jpgs, data_type, model_type, target_distances, file_index, vis=vis, item=None, num_ys=num_ys)
+                        file_index += 1
+        else:
+                file_index = 0
+                #PATH_jpgs = 'RailNet_DT/rs19_val/jpgs/vozovna'
+                PATH_jpgs = 'Grafika/Video_export/frames'
+                model_seg = load_model(PATH_model_seg)
+                model_det = load_yolo(PATH_model_det)
+                for filename_img in os.listdir(PATH_jpgs):
+                        #filename_img = "frame_1525.jpg"
+                        if os.path.exists(os.path.join('Grafika/Video_export/frames_estimated', filename_img)):
+                                file_index += 1
+                                continue
+                        else:
+                                run(model_seg, model_det, image_size, filename_img, PATH_jpgs, data_type, model_type, target_distances, file_index, vis=vis, item=None, num_ys=num_ys)
+                                file_index += 1

@@ -109,17 +109,29 @@ def filter_crossings(image, edges_dict):
                                 for i, value in enumerate(values1):
                                         if start in value:
                                                 idx = list(value).index(start)
-                                                differences_y.append(abs(start-edges_to_test_slope1[i][idx]))
+                                                try:
+                                                        differences_y.append(abs(start-edges_to_test_slope1[i][idx]))
+                                                except:
+                                                        pass
                                         if merged[-1][1] in value:
                                                 idx = list(value).index(merged[-1][1])
-                                                differences_y.append(abs(merged[-1][1]-edges_to_test_slope1[i][idx]))
+                                                try:
+                                                        differences_y.append(abs(merged[-1][1]-edges_to_test_slope1[i][idx]))
+                                                except:
+                                                        pass
                                 for i, value in enumerate(values2):
                                         if start in value:
                                                 idx = list(value).index(start)
-                                                differences_y.append(abs(start-edges_to_test_slope2[i][idx]))
+                                                try:
+                                                        differences_y.append(abs(start-edges_to_test_slope2[i][idx]))
+                                                except:
+                                                        pass
                                         if merged[-1][1] in value:
                                                 idx = list(value).index(merged[-1][1])
-                                                differences_y.append(abs(merged[-1][1]-edges_to_test_slope2[i][idx]))
+                                                try:
+                                                        differences_y.append(abs(merged[-1][1]-edges_to_test_slope2[i][idx]))
+                                                except:
+                                                        pass
                                 
                                 if any(element > 30 for element in differences_y):
                                         merged[-1] = (merged[-1][0], end)

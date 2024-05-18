@@ -15,7 +15,7 @@ PATH_jpgs = 'RailNet_DT/rs19_val/jpgs/test'
 PATH_jpg = 'RailNet_DT/rs19_val/jpgs/test/rs07700.jpg'
 PATH_mask = 'RailNet_DT/rs19_val/uint8/test/rs07700.png'
 PATH_masks = 'RailNet_DT/rs19_val/uint8/test'
-PATH_model = 'RailNet_DT/models/modelchp_zesty-sweep-1_80_0.600687.pth'
+PATH_model = 'RailNet_DT/models/modelchp_vivid-sweep-14_70_0.624815.pth'
 #model_300_0.001_13_16_dd_adamw.pth, model_300_0.005_13_32_fp_adamw.pth, model_300_0.01_13_16_wh.pth
 #modelchp_170_300_0.001_32_0.671144_aug.pth!, modelchp_105_200_0.001_32_0.725929_rf.pth, modelchp_185_200_0.001_32_0.788379_robustfire_noaug_480x480.pth
 
@@ -43,18 +43,9 @@ def load(filename, PATH_jpgs, input_size=[224,224], dataset_type='rs19val', item
         
     image_in = cv2.imread(os.path.join(PATH_jpgs, filename))
     mask = cv2.imread(mask_pth, cv2.IMREAD_GRAYSCALE)
+    
     if dataset_type == 'testdata':
         image_in = cv2.resize(image_in, (1920, 1080))
-
-    # LOAD THE IMAGE
-    #im_jpg = cv2.resize(image, (224, 224), interpolation=cv2.INTER_NEAREST)
-    #image = torch.tensor(im_jpg, dtype=torch.float32)
-    #image_norm = torch.div(image.permute(2, 0, 1), 254) # input normalization
-    #image_norm = image_norm.unsqueeze(0)
-    
-    # LOAD THE MASK
-    #id_map_gt = cv2.resize(mask_gr, (224, 224), interpolation=cv2.INTER_NEAREST)
-    #mask = torch.tensor(id_map_gt, dtype=torch.float32).long()
 
     transformed = transform_resize(image=image_in, mask=mask)
     image = transformed['image']
@@ -253,8 +244,8 @@ if __name__ == "__main__":
         
         model_type = "segformer" #"deeplab"
         dataset_type = 'rs19val'
-        filename = 'rs07680.jpg'
-        image_norm, image, mask, id_map_gt = load(filename, PATH_jpgs, image_size, dataset_type)
+        #filename = 'rs07680.jpg'
+        image_norm, image, _, mask, id_map_gt = load(filename, PATH_jpgs, image_size, dataset_type)
         model = load_model(PATH_model)
         # INFERENCE + SOFTMAX
         id_map = process(model, image_norm, mask, model_type)

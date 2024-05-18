@@ -15,7 +15,7 @@ mask_path = "RailNet_DT\\railway_dataset\media\images\mask"
 eda_path = "RailNet_DT\\railway_dataset\eda_table.table.json"
 data_json = json.load(open(eda_path, 'r'))
 PATH_base = "RailNet_DT\\railway_dataset"
-PATH_model = 'RailNet_DT/models/modelchp_glorious-sweep-7_70_0.614606.pth'
+PATH_model = 'RailNet_DT/models/modelchp_vivid-sweep-14_70_0.624815.pth'
 
 #model_300_0.001_13_16_dd_adamw.pth, model_300_0.005_13_32_fp_adamw.pth, model_300_0.01_13_16_wh.pth
 #modelchp_170_300_0.001_32_0.671144_aug.pth!, modelchp_105_200_0.001_32_0.725929_rf.pth, modelchp_185_200_0.001_32_0.788379_robustfire_noaug_480x480.pth
@@ -193,11 +193,11 @@ if __name__ == "__main__":
         images_computed += 1
         filename = item[1][1]["sha256"][0:20]
         
-        image_size = [512,512]
-        vis = True
+        image_size = [1024,1024]
+        vis = False
         
-        #if images_computed > 50:
-        #    break
+        if images_computed > 500:
+            break
         
         image_norm, image, mask, id_map_gt, model = load(item, image_size)
 

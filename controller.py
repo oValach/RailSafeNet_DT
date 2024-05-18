@@ -14,7 +14,7 @@ from ultralyticsplus import YOLO
 from test import load, load_model, process
 
 PATH_jpgs = 'RailNet_DT/rs19_val/jpgs/test'
-PATH_model_seg = 'RailNet_DT/models/modelchp_85_100_0.0002865237576874738_2_0.606629.pth'
+PATH_model_seg = 'RailNet_DT/models/modelchp_vivid-sweep-14_70_0.624815.pth'
 PATH_model_det = 'ultralyticsplus/yolov8s'
 PATH_base = 'RailNet_DT/railway_dataset/'
 eda_path = "RailNet_DT/railway_dataset/eda_table.table.json"
@@ -671,6 +671,28 @@ def compute_detection_borders(borders, output_dims=[1080,1920]):
                 
         return borders
 
+def get_bounding_box_points(cx, cy, w, h):
+        top_left = (cx - w / 2, cy - h / 2)
+        top_right = (cx + w / 2, cy - h / 2)
+        bottom_right = (cx + w / 2, cy + h / 2)
+        bottom_left = (cx - w / 2, cy + h / 2)
+        
+        corners = [top_left, top_right, bottom_right, bottom_left]
+        
+        def interpolate(point1, point2, fraction):
+                """Interpolate between two points at a given fraction of the distance."""
+                return (point1[0] + fraction * (point2[0] - point1[0]), 
+                        point1[1] + fraction * (point2[1] - point1[1]))
+
+        points = []
+        for i in range(4):
+                next_i = (i + 1) % 4
+                points.append(corners[i])
+                points.append(interpolate(corners[i], corners[next_i], 1 / 3))
+                points.append(interpolate(corners[i], corners[next_i], 2 / 3))
+
+        return points
+
 def classify_detections(boxes_moving, boxes_stationary, borders, img_dims, output_dims=[1080,1920]):
         img_h, img_w, _ = img_dims
         img_h_scaletofullHD = output_dims[1]/img_w
@@ -690,15 +712,21 @@ def classify_detections(boxes_moving, boxes_stationary, borders, img_dims, outpu
                                         w = coord[2]*img_w_scaletofullHD
                                         h = coord[3]*img_h_scaletofullHD
                                         
+                                        points_to_test = get_bounding_box_points(x, y, w, h)
+                                        
                                         complete_border = []
                                         criticality = -1
                                         color = None
                                         for i,border in enumerate(reversed(borders)):
                                                 border_nonempty = [np.array(arr) for arr in border if np.array(arr).size > 0]
                                                 complete_border = np.vstack((border_nonempty))
-                                                
                                                 instance_border_path = mplPath.Path(np.array(complete_border))
-                                                is_inside_borders = instance_border_path.contains_point((x,y))
+                                                
+                                                is_inside_borders = False
+                                                for point in points_to_test:
+                                                        is_inside = instance_border_path.contains_point(point)
+                                                        if is_inside:
+                                                                is_inside_borders = True
                                                 
                                                 if is_inside_borders:
                                                         criticality = i
@@ -717,15 +745,22 @@ def classify_detections(boxes_moving, boxes_stationary, borders, img_dims, outpu
                                         w = coord[2]*img_w_scaletofullHD
                                         h = coord[3]*img_h_scaletofullHD
                                         
+                                        points_to_test = get_bounding_box_points(x, y, w, h)
+                                        
                                         complete_border = []
                                         criticality = -1
                                         color = None
                                         is_inside_borders = 0
                                         for i,border in enumerate(reversed(borders), start=len(borders) - 1):
                                                 border_nonempty = [np.array(arr) for arr in border if np.array(arr).size > 0]
-                                                complete_border = np.vstack((border[0], border[1], border[2], border[3]))
+                                                complete_border = np.vstack(border_nonempty)
                                                 instance_border_path = mplPath.Path(np.array(complete_border))
-                                                is_inside_borders = instance_border_path.contains_point((x,y))
+                                                
+                                                is_inside_borders = False
+                                                for point in points_to_test:
+                                                        is_inside = instance_border_path.contains_point(point)
+                                                        if is_inside:
+                                                                is_inside_borders = True
                                                 
                                                 if is_inside_borders:
                                                         criticality = i
@@ -761,6 +796,7 @@ def show_result(classification, id_map, names, borders, image, regions, file_ind
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = cv2.resize(image, (id_map.shape[1], id_map.shape[0]), interpolation = cv2.INTER_LINEAR)
         fig = plt.figure(figsize=(16, 9), dpi=400)
+        plt.imshow(image, cmap='gray')
         
         if classification:
                 for box in classification:
@@ -769,7 +805,6 @@ def show_result(classification, id_map, names, borders, image, regions, file_ind
                         cx,cy = box[3]
                         name = names[box[0]]
                         if boxes:
-                                plt.imshow(image, cmap='gray')
                                 w,h = box[4]
                                 x = cx - w / 2
                                 y = cy - h / 2
@@ -802,73 +837,12 @@ def show_result(classification, id_map, names, borders, image, regions, file_ind
                                 plt.xlim(0, 1920)
                                 plt.gca().invert_yaxis()
                 
-        #plt.show()
+        plt.show()
+        
         plt.tight_layout()
         plt.savefig(f'Grafika/Video_export/frames_estimated/frame_{file_index:04d}.jpg', format='jpg', bbox_inches='tight')
         plt.close()
         print('Frame saved successfully.')
-        
-        return
-
-def save_result(classification, id_map, names, borders, image, regions, file_index):
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = cv2.resize(image, (id_map.shape[1], id_map.shape[0]), interpolation = cv2.INTER_LINEAR)
-        
-        if classification:
-                for box in classification:
-                        cx,cy = box[3]
-                        name = names[box[0]]
-                        w,h = box[4]
-                        x = cx - w / 2
-                        y = cy - h / 2
-                        start_point = (x, y-20)  # Coordinates of the rectangle's top left corner
-                        end_point = (x+50, y)  # Coordinates of the rectangle's bottom right corner
-                        color = (255, 0, 0)  # Blue color in BGR
-                        thickness = -1  # Solid fill
-
-                        # Add a rectangle to the image
-                        cv2.rectangle(image, start_point, end_point, color, thickness)
-
-                        # Define text parameters
-                        text = "Your Text Here"
-                        font_scale = 1
-                        font = cv2.FONT_HERSHEY_SIMPLEX
-                        text_color = (0, 0, 0)  # Black color in BGR
-                        text_thickness = 2
-                        text_location = (x, y - 17)  # Adjust location as needed
-
-                        # Add text to the image
-                        cv2.putText(image, name, text_location, font, font_scale, text_color, text_thickness, cv2.LINE_AA)
-
-                        # Save the image
-                        cv2.imwrite('output.jpg', image)
-
-        colors = ['yellow','orange','red']
-        borders.reverse()
-        for i,border in enumerate(borders):
-                for side in border:
-                        side = np.array(side)
-                        plt.plot(side[:,0],side[:,1] ,'-', color=colors[i], marker=None, linewidth=0.6) #color=colors[i]
-                        plt.ylim(0, 1080)
-                        plt.xlim(0, 1920)
-                        plt.gca().invert_yaxis()
-                
-        for region in regions:
-                for side in region:
-                        for line in side:
-                                line = np.array(line)
-                                plt.plot(line[:,1], line[:,0] ,'-', color='lightgrey', marker=None, linewidth=0.5)
-                                plt.ylim(0, 1080)
-                                plt.xlim(0, 1920)
-                                plt.gca().invert_yaxis()
-                
-        #plt.show()
-        plt.tight_layout()
-        plt.savefig(f'Grafika/Video_export/frames_estimated/frame_{file_index:04d}.jpg', format='jpg', bbox_inches='tight')
-        plt.close()
-        print('Frame saved successfully.')
-        
-        return
 
 def run(model_seg, model_det, image_size, filepath_img, PATH_jpgs, dataset_type, model_type, target_distances, file_index, vis, item=None, num_ys = 15):
 
@@ -917,7 +891,7 @@ if __name__ == "__main__":
                 model_seg = load_model(PATH_model_seg)
                 model_det = load_yolo(PATH_model_det)
                 for filename_img in os.listdir(PATH_jpgs):
-                        filename_img = "rs07996.jpg" #rs07659 55 rs07718.jpg rs07662.jpg - rs07898.jpg (priklad s lidmi pro 5400,6500,8000)
+                        filename_img = "rs07650.jpg" #rs07659 55 rs07718.jpg rs07662.jpg - rs07898.jpg (priklad s lidmi pro 5400,6500,8000)
                         run(model_seg, model_det, image_size, filename_img, PATH_jpgs, data_type, model_type, target_distances, file_index, vis=vis, item=None, num_ys=num_ys)
                         file_index += 1
         else:
@@ -933,4 +907,4 @@ if __name__ == "__main__":
                                 continue
                         else:
                                 run(model_seg, model_det, image_size, filename_img, PATH_jpgs, data_type, model_type, target_distances, file_index, vis=vis, item=None, num_ys=num_ys)
-                                file_index += 1
+                                file_index += 1 

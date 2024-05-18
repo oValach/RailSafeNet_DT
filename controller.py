@@ -621,6 +621,12 @@ def compute_detection_borders(borders, output_dims=[1080,1920]):
                         
                 endpoints_r = [border_r[0],border_r[-1]]
                 
+                if np.array_equal(np.array([[0,0],[0,0]]), endpoints_l):
+                        endpoints_l = [[0,endpoints_r[0][1]],[0,endpoints_r[1][1]]]
+                        
+                if np.array_equal(np.array([[0,0],[0,0]]), endpoints_r):
+                        endpoints_r = [[det_width,endpoints_l[0][1]],[det_width,endpoints_l[1][1]]]
+                
                 interpolated_top = bresenham_line(endpoints_l[1][0],endpoints_l[1][1],endpoints_r[1][0],endpoints_r[1][1])
 
                 zero_range = [0,1,2,3]
@@ -795,7 +801,7 @@ def draw_classification(classification, id_map):
 def show_result(classification, id_map, names, borders, image, regions, file_index):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = cv2.resize(image, (id_map.shape[1], id_map.shape[0]), interpolation = cv2.INTER_LINEAR)
-        fig = plt.figure(figsize=(16, 9), dpi=400)
+        #fig = plt.figure(figsize=(16, 9), dpi=100)
         plt.imshow(image, cmap='gray')
         
         if classification:
@@ -838,7 +844,7 @@ def show_result(classification, id_map, names, borders, image, regions, file_ind
                                 plt.gca().invert_yaxis()
                 
         plt.show()
-        
+
         plt.tight_layout()
         plt.savefig(f'Grafika/Video_export/frames_estimated/frame_{file_index:04d}.jpg', format='jpg', bbox_inches='tight')
         plt.close()
@@ -901,7 +907,7 @@ if __name__ == "__main__":
                 model_seg = load_model(PATH_model_seg)
                 model_det = load_yolo(PATH_model_det)
                 for filename_img in os.listdir(PATH_jpgs):
-                        #filename_img = "frame_1525.jpg"
+                        filename_img = "frame_2264.jpg"
                         if os.path.exists(os.path.join('Grafika/Video_export/frames_estimated', filename_img)):
                                 file_index += 1
                                 continue

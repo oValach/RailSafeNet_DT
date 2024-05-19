@@ -8,7 +8,7 @@ from sklearn.linear_model import LinearRegression
 import matplotlib.path as mplPath
 import matplotlib.patches as patches
 from ultralyticsplus import YOLO
-from test_filtered_cls import load, load_model, process
+from scripts.test_filtered_cls import load, load_model, process
 
 PATH_jpgs = 'RailNet_DT/rs19_val/jpgs/test'
 PATH_model_seg = 'RailNet_DT/models/modelchp_vivid-sweep-14_70_0.624815.pth'

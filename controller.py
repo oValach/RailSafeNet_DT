@@ -580,8 +580,8 @@ def manage_detections(results, model):
         names = model.model.names
         bbox = results[0].boxes.xywh.tolist()
         cls = results[0].boxes.cls.tolist()
-        accepted_stationary = np.array([24,25,26,28,29,30,31,36,56,57,59,60,61,62,63,68,69,70,71,72,78])
-        accepted_moving = np.array([0,1,2,3,5,7,15,16,17,18,19,20,21,22,23])
+        accepted_stationary = np.array([24,25,28,36])
+        accepted_moving = np.array([0,1,2,3,7,15,16,17,18,19])
         boxes_moving = {}
         boxes_stationary = {}
         if len(bbox) > 0:
@@ -801,7 +801,7 @@ def draw_classification(classification, id_map):
 def show_result(classification, id_map, names, borders, image, regions, file_index):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = cv2.resize(image, (id_map.shape[1], id_map.shape[0]), interpolation = cv2.INTER_LINEAR)
-        #fig = plt.figure(figsize=(16, 9), dpi=100)
+        fig = plt.figure(figsize=(16, 9), dpi=100)
         plt.imshow(image, cmap='gray')
         
         if classification:
@@ -843,8 +843,7 @@ def show_result(classification, id_map, names, borders, image, regions, file_ind
                                 plt.xlim(0, 1920)
                                 plt.gca().invert_yaxis()
                 
-        plt.show()
-
+        #plt.show()
         plt.tight_layout()
         plt.savefig(f'Grafika/Video_export/frames_estimated/frame_{file_index:04d}.jpg', format='jpg', bbox_inches='tight')
         plt.close()
@@ -907,10 +906,10 @@ if __name__ == "__main__":
                 model_seg = load_model(PATH_model_seg)
                 model_det = load_yolo(PATH_model_det)
                 for filename_img in os.listdir(PATH_jpgs):
-                        filename_img = "frame_2264.jpg"
+                        #filename_img = "frame_2264.jpg"
                         if os.path.exists(os.path.join('Grafika/Video_export/frames_estimated', filename_img)):
                                 file_index += 1
                                 continue
                         else:
-                                run(model_seg, model_det, image_size, filename_img, PATH_jpgs, data_type, model_type, target_distances, file_index, vis=vis, item=None, num_ys=num_ys)
+                                run(model_seg, model_det, image_size  , filename_img, PATH_jpgs, data_type, model_type, target_distances, file_index, vis=vis, item=None, num_ys=num_ys)
                                 file_index += 1 

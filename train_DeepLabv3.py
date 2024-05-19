@@ -57,7 +57,6 @@ else:
 PATH_MODELS = "RailNet_DT/models"
 PATH_LOGS = "RailNet_DT/logs"
 
-
 def create_model(output_channels=1):
     model = models.segmentation.deeplabv3_resnet50(weight=True, progress=True)
 

@@ -2,12 +2,12 @@
 verbose: False
 
 img_size: 1024
-epochs: 100
-batch_size: 6
+epochs: 50
+batch_size: 16
 
 #for training
 mode: 'train'
 data: "datasets/all_data/railsem19.yaml"
-output: "yolov8n_mot_ch"
+output: "models/yolov8s_finetuned"
 model: ultralyticsplus/yolov8s.pt
 resume: False

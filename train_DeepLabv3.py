@@ -1,4 +1,4 @@
-from dataloader_RailSem19 import CustomDataset
+from scripts.dataloader_RailSem19 import CustomDataset
 from scripts.metrics_filtered_cls import compute_map_cls, compute_IoU
 from torchvision.models.segmentation.deeplabv3 import DeepLabHead
 from torchvision import models

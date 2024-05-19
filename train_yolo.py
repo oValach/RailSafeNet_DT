@@ -1,4 +1,3 @@
-import torch
 import os
 import ultralytics
 ultralytics.checks()

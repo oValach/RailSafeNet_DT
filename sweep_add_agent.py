@@ -51,4 +51,4 @@ sweep_config = {
 }
 
 if __name__ == "__main__":
-        wandb.agent('ovalach/DP_train_full/1bl4fkdx', sweep_train, count=20)
+        wandb.agent('ovalach/RailNet/1bl4fkdx', sweep_train, count=20)

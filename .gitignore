@@ -8,6 +8,7 @@ wandb/
 .venv
 env/
 venv/
+other/
 ENV/
 env.bak/
 venv.bak/
@@ -24,25 +25,3 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.vscode
-
-*.xlsx
-*.ini
-jobData/xresnet50.pkl
-jobData/chuck_norris.pkl
-
-note.py
-graph_wandb copy.py
-graph_wandb.py
-video_frames_exporter.py
-video_assembler.py
-dataloader_Mask2Former.py
-train_Mask2Former.py
-YOLO_det_test.py
-train_onelabel.py
-image_resize.py
-SD.py
-statistics_base.py
-stats_datasetv2.py
-json_tests.py
-graphs.py
-data_exporter.py

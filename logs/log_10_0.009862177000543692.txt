@@ -1,1 +1,0 @@
-Epoch 1/10: Train loss: 2.7907 | Val loss: 0.0000 | lr: 0.0099 | mAP: 0.0490 | MmAP: 0.0593 | IoU: 0.0174 | MIoU: 0.0208

@@ -1,8 +1,6 @@
 from dataloader_SegFormer import CustomDataset
-from mAP import compute_map_cls, compute_IoU
-from torchvision.models.segmentation.deeplabv3 import DeepLabHead
+from metrics_filtered_cls import compute_map_cls, compute_IoU
 from transformers import SegformerModel, SegformerConfig, SegformerForSemanticSegmentation, SegformerImageProcessor
-from torchvision import models
 from torch.optim import SGD, Adam, Adagrad, AdamW
 from torch.utils.data import DataLoader
 import torch.optim.lr_scheduler as lr_scheduler
@@ -35,8 +33,7 @@ def get_image_4_wandb(path, input_size = [224,224]):
 
 def wandb_init(num_epochs, lr, batch_size, outputs, optimizer, scheduler, model):
     wandb.init(
-        project="DP_train_full",
-        # name=f"experiment_{run}",
+        project="RailNet",
         config={
             "learning_rate": lr,
             "batch_size": batch_size,

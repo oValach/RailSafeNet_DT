@@ -3,11 +3,8 @@ from torchvision.datasets.vision import VisionDataset
 from albumentations.pytorch import ToTensorV2
 import albumentations as A
 import numpy as np
-import torch
 import cv2
 import re
-import os
-
 
 class CustomDataset(VisionDataset):
     def __init__(self, image_folder, mask_folder, image_processor, image_size, subset, val_fraction=0.1):

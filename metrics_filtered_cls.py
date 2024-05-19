@@ -1,20 +1,13 @@
 import numpy as np
-import cv2
-import math
 from sklearn.metrics import average_precision_score
 from skimage import morphology
 
 
 def image_morpho(mask_prediction):
     selem2 = morphology.disk(2)
-    selem1 = morphology.disk(1)
-    
-    #dilated = morphology.dilation(mask_prediction, selem2)
-    #dilated_eroded = morphology.erosion(dilated, selem1)
     closed = morphology.closing(mask_prediction, selem2)
     
     return closed
-
 
 def remap_mask(mask1, mask2): # not used
     classes_mask1 = np.unique(mask1)
@@ -56,14 +49,14 @@ def compute_map_cls(gt_mask, pred_mask, classes_ap, major = False, treshold=150)
         classes = np.unique(np.concatenate((np.unique(gt_mask),np.unique(pred_mask))))
         classes = classes[np.isin(classes, np.unique(gt_mask)) & np.isin(classes, np.unique(pred_mask))]
     
-    if np.all(classes==21):
+    if np.all(classes==12):
         return 0, classes_ap
     
     # compute the AP for individual classes
     ap_values = []
     dict_ap_values = {}
     for class_index in classes:
-        if class_index != 21: # exclude background class 21
+        if class_index != 12: # exclude background class 12
             ap = compute_ap_for_cls(gt_mask, pred_mask, class_index)
             ap_values.append(ap) # save for per picture evaluation
             dict_ap_values[class_index] = ap # save for per class evaluation
@@ -95,13 +88,13 @@ def compute_IoU(gt_mask, pred_mask, classes_stats, major=False, treshold=144):
         classes = np.unique(np.concatenate((np.unique(gt_mask),np.unique(pred_mask))))
         classes = classes[np.isin(classes, np.unique(gt_mask)) & np.isin(classes, np.unique(pred_mask))]
 
-    if np.all(classes==21):
+    if np.all(classes==12):
         return(0, 0, 0, 0, classes_stats)
     
     stats_image = {}
     
     for cls in classes:
-        if cls != 21: # excluding background
+        if cls != 12: # excluding background
             
             intersection = np.sum((gt_mask == cls) & (pred_mask == cls))
             union = np.sum((gt_mask == cls) | (pred_mask == cls))

@@ -6,8 +6,6 @@ import numpy as np
 import torch
 import cv2
 import re
-import os
-
 
 class CustomDataset(VisionDataset):
     def __init__(self, image_folder, mask_folder, image_size, subset, val_fraction=0.1):

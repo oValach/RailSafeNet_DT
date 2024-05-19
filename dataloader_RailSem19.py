@@ -3,11 +3,8 @@ from torchvision.datasets.vision import VisionDataset
 from albumentations.pytorch import ToTensorV2
 import albumentations as A
 import numpy as np
-import torch
 import cv2
 import re
-import os
-
 
 class CustomDataset(VisionDataset):
     def __init__(self, image_folder, mask_folder, image_size, subset, val_fraction=0.1):
@@ -106,19 +103,6 @@ class CustomDataset(VisionDataset):
                     mask[mask==cls] = idx
 
                 mask[mask==255] = 12 # background
-            
-            ploting = False
-            if ploting:
-                import matplotlib.pyplot as plt
-                mask[mask == 255] = 0
-
-                plt.figure()
-                plt.subplot(1, 2, 1)
-                plt.imshow(mask.squeeze(), cmap='gray')
-
-                plt.subplot(1, 2, 2) 
-                plt.imshow(image[0], cmap='gray')
-                plt.show()
 
             sample = [image, mask.squeeze().long()]
             return sample

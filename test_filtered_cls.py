@@ -1,26 +1,20 @@
 import numpy as np
 import pandas as pd
 import torch
-import json
 import cv2
 import os
 import torch.nn as nn
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import torch.nn.functional as F
-from mAP import compute_map_cls, compute_IoU, image_morpho
+from metrics_filtered_cls import compute_map_cls, compute_IoU, image_morpho
 from rs19_val.example_vis import rs19_label2bgr
 
-mask_path = "RailNet_DT\\railway_dataset\media\images\mask"
-eda_path = "RailNet_DT\\railway_dataset\eda_table.table.json"
-data_json = json.load(open(eda_path, 'r'))
-PATH_base = "RailNet_DT\\railway_dataset"
+PATH_jpgs = 'RailNet_DT/rs19_val/jpgs/test'
+PATH_masks = 'RailNet_DT/rs19_val/uint8/test'
 PATH_model = 'RailNet_DT/models/modelchp_vivid-sweep-14_70_0.624815.pth'
 
-#model_300_0.001_13_16_dd_adamw.pth, model_300_0.005_13_32_fp_adamw.pth, model_300_0.01_13_16_wh.pth
-#modelchp_170_300_0.001_32_0.671144_aug.pth!, modelchp_105_200_0.001_32_0.725929_rf.pth, modelchp_185_200_0.001_32_0.788379_robustfire_noaug_480x480.pth
-
-def load(item, input_size=[224,224]):
+def load(filename, PATH_jpgs, input_size=[224,224], dataset_type='rs19val', item = None):
     transform_img = A.Compose([
                     A.Resize(height=input_size[0], width=input_size[1], interpolation=cv2.INTER_NEAREST),
                     A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
@@ -29,45 +23,61 @@ def load(item, input_size=[224,224]):
     transform_mask = A.Compose([
                     A.Resize(height=input_size[0], width=input_size[1], interpolation=cv2.INTER_NEAREST),
                     ToTensorV2(p=1.0),
-                    ])
+                    ])  
     
-    img_path = item[1][1]["path"]
-    mask_path = item[1][1]["masks"]["ground_truth"]["path"]
-    
-    image = cv2.imread(os.path.join(PATH_base, img_path))
-    mask_pth = os.path.join(PATH_base, mask_path)
+    if dataset_type == 'pilsen':
+        mask_pth = item[1][1]["masks"]["ground_truth"]["path"]
+        mask_pth = os.path.join(PATH_jpgs, mask_pth)
+    elif dataset_type == 'railsem19':
+        mask_pth = os.path.join(PATH_masks, filename).replace('.jpg', '.png')
+    else:
+        mask_pth = "RailNet_DT/rs19_val/jpgs/placeholder_mask.png"
+        
+    image_in = cv2.imread(os.path.join(PATH_jpgs, filename))
     mask = cv2.imread(mask_pth, cv2.IMREAD_GRAYSCALE)
-
-    image_tr = transform_img(image=image)['image']
+    
+    if dataset_type == 'testdata':
+        image_in = cv2.resize(image_in, (1920, 1080))
+    
+    image_tr = transform_img(image=image_in)['image']
     image_tr = image_tr.unsqueeze(0)
-    image_vis = transform_mask(image=image)['image']
+    image_vis = transform_mask(image=image_in)['image']
     mask = transform_mask(image=mask)['image']
     mask_id_map = np.array(mask.cpu().detach().numpy(), dtype=np.uint8)
     
-    # LOAD THE MODEL
-    model = torch.load(PATH_model, map_location=torch.device('cpu'))
-    model, image_tr = model.cpu(), image_tr.cpu()
+    image_tr = image_tr.cpu()
+    
+    return image_tr, image_vis, image_in, mask, mask_id_map
+
+def load_model(path_model):
+    
+    model = torch.load(path_model, map_location=torch.device('cpu'))
+    model = model.cpu()
     model.eval()
-    
-    return image_tr, image_vis, mask, mask_id_map, model
+    return model
 
-def merge_ids(id_map):
-    id_to_merge = [0,6,9,10]
-    ids_all = np.unique(id_map)
+def remap_ignored_clss(id_map):
+    ignore_list = [0,1,2,6,8,9,15,16,19,20]
+    for cls in ignore_list:
+        id_map[id_map==cls] = 255
 
-    for id in ids_all:
-        if id in id_to_merge:
-            id_map[id_map==id] = 30 # object
-        else:
-            id_map[id_map==id] = 0 # background
-    
-    id_map[id_map==30] = 1
+    ignore_set = set(ignore_list)
+    cls_remaining = [num for num in range(0, 22) if num not in ignore_set]
+
+    # renumber the remaining classes 0-number of remaining classes
+    for idx, cls in enumerate(cls_remaining):
+        id_map[id_map==cls] = idx
+
+    id_map[id_map==255] = 12 # background
     
     return id_map
 
 def prepare_for_display(mask, image, id_map, rs19_label2bgr, image_size = [224,224]):
-    mask[mask==1] = 100
-    mask = mask.detach().numpy().squeeze().astype(np.uint8)
+    # Mask + prediction preparation
+    mask = mask + 1
+    mask[mask==256] = 0
+    mask = remap_ignored_clss(mask)
+    mask = (mask + 100).detach().numpy().squeeze().astype(np.uint8)
     mask_rgb = cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB)
 
     # Opacity channel addition to both mask and img
@@ -103,8 +113,8 @@ def visualize(rgba_blend, rgba_mask):
     image1 = rgba_blend
     image2 = rgba_mask
 
-    initial_opacity1 = 0.8
-    initial_opacity2 = 0.6
+    initial_opacity1 = 0.05
+    initial_opacity2 = 0.95
     # Load two smaller images
     small_image1 = cv2.resize(image1, (300, 300), interpolation=cv2.INTER_NEAREST)
     small_image2 = cv2.resize(image2, (300, 300), interpolation=cv2.INTER_NEAREST)
@@ -182,49 +192,53 @@ def stats_mean_and_reorder(classes_ap,classes_Map,classes_stats,classes_Mstats):
 
     return classes_ap,classes_Map,classes_stats,classes_Mstats
 
+def process(model, input_img, mask, model_type):
+    if model_type == "segformer":
+        outputs = model(input_img) # segformer
+    elif model_type == "deeplab":
+        outputs = model(input_img)['out'] # deeplab resnet
+    
+    logits = outputs.logits
+    upsampled_logits = nn.functional.interpolate(
+        logits,
+        size=mask.shape[-2:],
+        mode="bilinear",
+        align_corners=False
+    )
+    
+    output  = upsampled_logits.float()
+        
+    confidence_scores = F.softmax(output, dim=1).cpu().detach().numpy().squeeze()
+    id_map = np.argmax(confidence_scores, axis=0).astype(np.uint8)
+    id_map = image_morpho(id_map)
+    
+    return id_map
 
 if __name__ == "__main__":
     mAPs,MmAPs,IoUs,MIoUs,accs,Maccs,precs,Mprecs,recs,Mrecs= list(),list(),list(),list(),list(),list(),list(),list(),list(),list()
     classes_ap,classes_Map,classes_stats,classes_Mstats = {},{},{},{}
     images_computed = 0
     
-    #print(os.getcwd())
-    for item in enumerate(data_json["data"]):
+    for filename in os.listdir(PATH_jpgs):
         images_computed += 1
-        filename = item[1][1]["sha256"][0:20]
         
-        image_size = [1024,1024]
         vis = False
+        to_break = False
+        image_size = [1024,1024]
         
-        if images_computed > 500:
-            break
+        if to_break:
+            if images_computed > 50:
+                break
         
-        image_norm, image, mask, id_map_gt, model = load(item, image_size)
-
+        model_type = "segformer" #"deeplab"
+        dataset_type = 'rs19val'
+        image_norm, image, _, mask, id_map_gt = load(filename, PATH_jpgs, image_size, dataset_type)
+        model = load_model(PATH_model)
         # INFERENCE + SOFTMAX
-        #output = model(image_norm)['out'] #resnet deeplab
-        
-        outputs = model(image_norm) # segformer
-        logits = outputs.logits
-        
-        upsampled_logits = nn.functional.interpolate(
-            logits,
-            size=mask.shape[-2:],
-            mode="bilinear",
-            align_corners=False
-        )
-
-        output  = upsampled_logits.float()
-        
-        confidence_scores = F.softmax(output, dim=1).cpu().detach().numpy().squeeze()
-        id_map = np.argmax(confidence_scores, axis=0).astype(np.uint8)
-        id_map = image_morpho(id_map)
-        
-        id_map = merge_ids(id_map)
-        id_map[id_map == 0] = 12
-        id_map_gt[id_map_gt == 0] = 12
+        id_map = process(model, image_norm, mask, model_type)
         
         # mAP
+        id_map_gt = remap_ignored_clss(id_map_gt)
         map,classes_ap  = compute_map_cls(id_map_gt, id_map, classes_ap)
         Mmap,classes_Map = compute_map_cls(id_map_gt, id_map, classes_Map, major = True)
         IoU,acc,prec,rec,classes_stats = compute_IoU(id_map_gt, id_map, classes_stats)

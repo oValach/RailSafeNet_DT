@@ -5,13 +5,10 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
-from sahi.prediction import ObjectPrediction, PredictionScore
-from collections import defaultdict
 import matplotlib.path as mplPath
-from matplotlib.path import Path
 import matplotlib.patches as patches
 from ultralyticsplus import YOLO
-from test import load, load_model, process
+from test_filtered_cls import load, load_model, process
 
 PATH_jpgs = 'RailNet_DT/rs19_val/jpgs/test'
 PATH_model_seg = 'RailNet_DT/models/modelchp_vivid-sweep-14_70_0.624815.pth'
@@ -577,7 +574,6 @@ def detect(model_det, filename_img, PATH_jpgs):
         return results, model_det, image
 
 def manage_detections(results, model):
-        names = model.model.names
         bbox = results[0].boxes.xywh.tolist()
         cls = results[0].boxes.cls.tolist()
         accepted_stationary = np.array([24,25,28,36])
@@ -869,7 +865,6 @@ def run(model_seg, model_det, image_size, filepath_img, PATH_jpgs, dataset_type,
         classification = classify_detections(boxes_moving, boxes_stationary, borders, image.shape, output_dims=segmentation_mask.shape)
         
         #draw_classification(classification, id_map)
-        #save_result(classification, id_map, model.names, borders, image, regions, file_index)
         show_result(classification, id_map, model.names, borders, image, regions, file_index)
 
 if __name__ == "__main__":
@@ -887,26 +882,21 @@ if __name__ == "__main__":
                 model_det = load_yolo(PATH_model_det)
                 for item in enumerate(data_json["data"]):
                         filepath_img = item[1][1]["path"]
-                        filepath_img = 'media/images/54aab9736c550dd3de74/frame_0025840.png' #fav
-                        #filepath_img = 'media/images/f00ccbec00af1e356f56/frame_0022040.png'
-                        # segmentace - frame_121440.png,frame_121560.png,frame_123320.png,frame_125400.png,frame_127000.png,frame_128040.png
                         run(model_seg, model_det, image_size, filepath_img, PATH_base, data_type, model_type, target_distances, file_index, vis=vis, item=item, num_ys=num_ys)
         elif data_type == 'railsem19':
                 file_index = 0
                 model_seg = load_model(PATH_model_seg)
                 model_det = load_yolo(PATH_model_det)
                 for filename_img in os.listdir(PATH_jpgs):
-                        filename_img = "rs07650.jpg" #rs07659 55 rs07718.jpg rs07662.jpg - rs07898.jpg (priklad s lidmi pro 5400,6500,8000)
+                        filename_img = "rs07650.jpg"
                         run(model_seg, model_det, image_size, filename_img, PATH_jpgs, data_type, model_type, target_distances, file_index, vis=vis, item=None, num_ys=num_ys)
                         file_index += 1
         else:
                 file_index = 0
-                #PATH_jpgs = 'RailNet_DT/rs19_val/jpgs/vozovna'
                 PATH_jpgs = 'Grafika/Video_export/frames'
                 model_seg = load_model(PATH_model_seg)
                 model_det = load_yolo(PATH_model_det)
                 for filename_img in os.listdir(PATH_jpgs):
-                        #filename_img = "frame_2264.jpg"
                         if os.path.exists(os.path.join('Grafika/Video_export/frames_estimated', filename_img)):
                                 file_index += 1
                                 continue

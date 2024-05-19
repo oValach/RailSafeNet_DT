@@ -1,13 +1,10 @@
 from dataloader_SegFormer import CustomDataset
-from mAP import compute_map_cls, compute_IoU
-from torchvision.models.segmentation.deeplabv3 import DeepLabHead
+from metrics_filtered_cls import compute_map_cls, compute_IoU
 from transformers import SegformerModel, SegformerConfig, SegformerForSemanticSegmentation, SegformerImageProcessor
-from torchvision import models
 from torch.optim import SGD, Adam, Adagrad, AdamW
 from torch.utils.data import DataLoader
 import torch.optim.lr_scheduler as lr_scheduler
 import torch.nn.functional as F
-from torchsummary import summary
 import torch.nn as nn
 import albumentations as A
 import torch
@@ -35,7 +32,6 @@ def get_image_4_wandb(path, input_size = [224,224]):
 def wandb_init(num_epochs, lr, batch_size, outputs, optimizer, scheduler, model):
     wandb.init(
         project="DP_train_full",
-        # name=f"experiment_{run}",
         config={
             "learning_rate": lr,
             "batch_size": batch_size,
@@ -52,7 +48,7 @@ WANDB = False
 
 if not LIGHT:
     PATH_JPGS = "RailNet_DT/rs19_val/jpgs/rs19_val"
-    PATH_MASKS = "RailNet_DT/rs19_val/uint8/rs19_val"  # /rails
+    PATH_MASKS = "RailNet_DT/rs19_val/uint8/rs19_val"
 else:
     PATH_JPGS = "RailNet_DT/rs19_val_light/jpgs/rs19_val"
     PATH_MASKS = "RailNet_DT/rs19_val_light/uint8/rs19_val"
@@ -253,14 +249,14 @@ def train(model, num_epochs, batch_size, image_size, optimizer, criterion):
     return final_model, model
 
 if __name__ == "__main__":
-    epochs = 500
+    epochs = 150
     lr = 0.00006
     batch_size = 4
     outs = 13
-    image_size = [224,224]
+    image_size = [1024,1024]
     
     model = create_model(outs)
-    #model = load_model('RailNet_DT/models/modelchp_105_300_0.001_32_[0.10826249 0.84361975 0.20432365 0.32408659].pth')
+    #model = load_model('RailNet_DT/models/modelchp_105_300_0.001_32.pth')
 
     loss_function = nn.CrossEntropyLoss(ignore_index=255)
     optimizer = AdamW(model.parameters(), lr=lr)
@@ -275,9 +271,6 @@ if __name__ == "__main__":
 
     torch.save(model_final, os.path.join(PATH_MODELS, 'model_{}_{}_{}_{}.pth'.format(epochs, lr, outs, batch_size)))
     torch.save(best_model, os.path.join(PATH_MODELS, 'modelb_{}_{}_{}_{}.pth'.format(epochs, lr, outs, batch_size)))
-    #image = get_image_4_wandb(PATH_JPGS,image_size)
-    #torch.onnx.export(best_model, image, 'model_{}_{}_{}_{}.onnx'.format(epochs, lr, outs, batch_size))
-    #wandb.save("model_{}_{}_{}_{}.onnx".format(epochs, lr, outs, batch_size))
     print('Saved as: model_{}_{}_{}_{}.pth'.format(epochs, lr, outs, batch_size))
     if WANDB:
         wandb.finish()

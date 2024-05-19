@@ -7,16 +7,12 @@ import torch.nn as nn
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import torch.nn.functional as F
-from mAP_21cls import compute_map_cls, compute_IoU, image_morpho
+from metrics_all_cls import compute_map_cls, compute_IoU, image_morpho
 from rs19_val.example_vis import rs19_label2bgr
 
 PATH_jpgs = 'RailNet_DT/rs19_val/jpgs/test'
-PATH_jpg = 'RailNet_DT/rs19_val/jpgs/test/rs07700.jpg'
-PATH_mask = 'RailNet_DT/rs19_val/uint8/test/rs07700.png'
 PATH_masks = 'RailNet_DT/rs19_val/uint8/test'
-PATH_model = 'RailNet_DT/models/modelchp_leafy-sweep-5_30_0.586161.pth'
-#model_300_0.001_13_16_dd_adamw.pth, model_300_0.005_13_32_fp_adamw.pth, model_300_0.01_13_16_wh.pth
-#modelchp_170_300_0.001_32_0.671144_aug.pth!, modelchp_105_200_0.001_32_0.725929_rf.pth, modelchp_185_200_0.001_32_0.788379_robustfire_noaug_480x480.pth
+PATH_model = 'RailNet_DT/models/modelchp_vivid-sweep-14_70_0.624815.pth'
 
 def load(filename, input_size=[224,224]):
     transform_img = A.Compose([
@@ -29,38 +25,19 @@ def load(filename, input_size=[224,224]):
                     ToTensorV2(p=1.0),
                     ])
     
-    #image = cv2.imread("F:/StableDiffusion/stable-diffusion-webui/output/img2img-images\\2024-03-19\\00062-1020183852.png")
-    
     image = cv2.imread(os.path.join(PATH_jpgs, filename))
     mask_pth = os.path.join(PATH_masks, filename).replace('.jpg', '.png')
     mask = cv2.imread(mask_pth, cv2.IMREAD_GRAYSCALE)
 
-    import matplotlib.pyplot as plt
     ignore_list = [0,1,2,6,8,9,15,16,19,20]
     for cls in ignore_list:
         mask[mask==cls] = 255
 
     ignore_set = set(ignore_list)
     cls_remaining = [num for num in range(0, 22) if num not in ignore_set]
-
-    mask[mask==255] = 12
     
     for idx, cls in enumerate(cls_remaining):
         mask[mask==cls] = idx
-
-    mask = mask+30
-    plt.imshow(mask, cmap='gray')
-    plt.show()
-    
-    # LOAD THE IMAGE
-    #im_jpg = cv2.resize(image, (224, 224), interpolation=cv2.INTER_NEAREST)
-    #image = torch.tensor(im_jpg, dtype=torch.float32)
-    #image_norm = torch.div(image.permute(2, 0, 1), 254) # input normalization
-    #image_norm = image_norm.unsqueeze(0)
-    
-    # LOAD THE MASK
-    #id_map_gt = cv2.resize(mask_gr, (224, 224), interpolation=cv2.INTER_NEAREST)
-    #mask = torch.tensor(id_map_gt, dtype=torch.float32).long()
 
     image_tr = transform_img(image=image)['image']
     image_tr = image_tr.unsqueeze(0)
@@ -205,9 +182,7 @@ if __name__ == "__main__":
         
         image_size = [1024,1024]
         vis = False
-        
-        #if images_computed > 50:
-        #    break
+
         image_norm, image, mask, id_map_gt, model = load(filename, image_size)
 
         # INFERENCE + SOFTMAX

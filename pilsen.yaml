@@ -7,7 +7,7 @@ batch_size: 16
 
 #for training
 mode: 'train'
-data: "datasets/all_data/pilsen.yaml"
-output: "yolov8s_finetuned"
+data: "datasets/all_data/railsem19.yaml"
+output: "models/yolov8s_finetuned"
 model: ultralyticsplus/yolov8s.pt
 resume: False

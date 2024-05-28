@@ -1,4 +1,4 @@
-# DT_Rail_object_detection
+# Automatic Detection of Railway Intruding Objects
 
 Dataset rs19_val accesible from: https://www.wilddash.cc/railsem19  
 Arrangement of folders: RailSafeNet_DT/rs19_val/*content of the shared folder*

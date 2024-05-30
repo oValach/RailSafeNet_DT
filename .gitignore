@@ -10,7 +10,7 @@ env/
 venv/
 other/
 ENV/
-assets/models/ultralyticsplus/yolov8s.pt
+assets/models_pretrained/ultralyticsplus/yolov8s.pt
 env.bak/
 venv.bak/
 models/

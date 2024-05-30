@@ -28,7 +28,7 @@ pip install -r assets/requirements.txt
 ```
 
 ## Execution
-For the one data sample inference, run `TheDistanceAccessor.py` script. Check the input parameters of function `run` before the execution and set it up acorrding to your needs.
+For the one data sample inference, run `TheDistanceAccessor.py` script. Check the input parameters of function `run` before the execution and set it up according to your needs.
 
 ## Demo example
 

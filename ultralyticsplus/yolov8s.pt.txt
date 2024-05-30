@@ -1,3 +1,0 @@
-The yolov8s.pt pretrained model directory.
-
-Model accessible from the link in section 7.7.2.

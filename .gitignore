@@ -10,7 +10,7 @@ env/
 venv/
 other/
 ENV/
-ultralytics
+ultralytics/yolov8s.pt
 env.bak/
 venv.bak/
 models/

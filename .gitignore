@@ -11,6 +11,7 @@ venv/
 other/
 ENV/
 assets/models_pretrained/ultralyticsplus/yolov8s.pt
+assets/models_pretrained/segformer/SegFormer_B3_1024_finetuned.pth
 env.bak/
 venv.bak/
 models/

@@ -1,4 +1,4 @@
-from RailNet_DT.sweep_SegFormer import sweep_train
+from sweep_SegFormer import sweep_train
 import wandb
 
 LIGHT = True

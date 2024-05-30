@@ -1,4 +1,4 @@
-from dataloader_SegFormer import CustomDataset
+from scripts.dataloader_SegFormer import CustomDataset
 from scripts.metrics_filtered_cls import compute_map_cls, compute_IoU
 from transformers import SegformerModel, SegformerConfig, SegformerForSemanticSegmentation, SegformerImageProcessor
 from torch.optim import SGD, Adam, Adagrad, AdamW

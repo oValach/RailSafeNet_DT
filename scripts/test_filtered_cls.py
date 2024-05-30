@@ -7,12 +7,12 @@ import torch.nn as nn
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import torch.nn.functional as F
-from metrics_filtered_cls import compute_map_cls, compute_IoU, image_morpho
+from scripts.metrics_filtered_cls import compute_map_cls, compute_IoU, image_morpho
 from rs19_val.example_vis import rs19_label2bgr
 
-PATH_jpgs = 'RailNet_DT/rs19_val/jpgs/test'
-PATH_masks = 'RailNet_DT/rs19_val/uint8/test'
-PATH_model = 'RailNet_DT/models/modelchp_vivid-sweep-14_70_0.624815.pth'
+PATH_jpgs = 'rs19_val/jpgs/test'
+PATH_masks = 'rs19_val/uint8/test'
+PATH_model = 'models/modelchp_vivid-sweep-14_70_0.624815.pth'
 
 def load(filename, PATH_jpgs, input_size=[224,224], dataset_type='rs19val', item = None):
     transform_img = A.Compose([
@@ -31,7 +31,7 @@ def load(filename, PATH_jpgs, input_size=[224,224], dataset_type='rs19val', item
     elif dataset_type == 'railsem19':
         mask_pth = os.path.join(PATH_masks, filename).replace('.jpg', '.png')
     else:
-        mask_pth = "RailNet_DT/rs19_val/jpgs/placeholder_mask.png"
+        mask_pth = "rs19_val/jpgs/placeholder_mask.png"
         
     image_in = cv2.imread(os.path.join(PATH_jpgs, filename))
     mask = cv2.imread(mask_pth, cv2.IMREAD_GRAYSCALE)

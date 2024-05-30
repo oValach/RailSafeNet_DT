@@ -10,11 +10,11 @@ import matplotlib.patches as patches
 from ultralyticsplus import YOLO
 from scripts.test_filtered_cls import load, load_model, process
 
-PATH_jpgs = 'RailNet_DT/rs19_val/jpgs/test'
-PATH_model_seg = 'RailNet_DT/models/modelchp_vivid-sweep-14_70_0.624815.pth'
+PATH_jpgs = 'rs19_val/jpgs/test'
+PATH_model_seg = 'models/modelchp_vivid-sweep-14_70_0.624815.pth'
 PATH_model_det = 'ultralyticsplus/yolov8s'
-PATH_base = 'RailNet_DT/railway_dataset/'
-eda_path = "RailNet_DT/railway_dataset/eda_table.table.json"
+PATH_base = 'railway_dataset/'
+eda_path = "assets/pilsen_railway_dataset/eda_table.table.json"
 data_json = json.load(open(eda_path, 'r'))
 
 def load_yolo(PATH_model):
@@ -839,11 +839,11 @@ def show_result(classification, id_map, names, borders, image, regions, file_ind
                                 plt.xlim(0, 1920)
                                 plt.gca().invert_yaxis()
                 
-        #plt.show()
-        plt.tight_layout()
-        plt.savefig(f'Grafika/Video_export/frames_estimated/frame_{file_index:04d}.jpg', format='jpg', bbox_inches='tight')
-        plt.close()
-        print('Frame saved successfully.')
+        plt.show()
+        #plt.tight_layout()
+        #plt.savefig(f'Grafika/Video_export/frames_estimated/frame_{file_index:04d}.jpg', format='jpg', bbox_inches='tight')
+        #plt.close()
+        print('Frame processed successfully.')
 
 def run(model_seg, model_det, image_size, filepath_img, PATH_jpgs, dataset_type, model_type, target_distances, file_index, vis, item=None, num_ys = 15):
 
@@ -869,7 +869,7 @@ def run(model_seg, model_det, image_size, filepath_img, PATH_jpgs, dataset_type,
 
 if __name__ == "__main__":
 
-        data_type = 'testdata' #railsem19, pilsen or testdata
+        data_type = 'railsem19' #railsem19, pilsen or testdata
         model_type = "segformer" #segformer or deeplab
         vis = False
         image_size = [1024,1024]
@@ -888,7 +888,7 @@ if __name__ == "__main__":
                 model_seg = load_model(PATH_model_seg)
                 model_det = load_yolo(PATH_model_det)
                 for filename_img in os.listdir(PATH_jpgs):
-                        filename_img = "rs07650.jpg"
+                        #filename_img = "rs07650.jpg"
                         run(model_seg, model_det, image_size, filename_img, PATH_jpgs, data_type, model_type, target_distances, file_index, vis=vis, item=None, num_ys=num_ys)
                         file_index += 1
         else:

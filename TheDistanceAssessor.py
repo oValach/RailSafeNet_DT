@@ -10,10 +10,10 @@ import matplotlib.patches as patches
 from ultralyticsplus import YOLO
 from scripts.test_filtered_cls import load, load_model, process
 
-PATH_jpgs = 'rs19_val/jpgs/test'
-PATH_model_seg = 'models/modelchp_vivid-sweep-14_70_0.624815.pth'
-PATH_model_det = 'ultralyticsplus/yolov8s'
-PATH_base = 'railway_dataset/'
+PATH_jpgs = 'assets/rs19val/jpgs/test'
+PATH_model_seg = 'assets/models_pretrained/segformer/SegFormer_B3_1024_finetuned.pth'
+PATH_model_det = 'assets/models_pretrained/ultralyticsplus/yolov8s'
+PATH_base = 'assets/pilsen_railway_dataset/'
 eda_path = "assets/pilsen_railway_dataset/eda_table.table.json"
 data_json = json.load(open(eda_path, 'r'))
 

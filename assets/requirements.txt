@@ -1,0 +1,16 @@
+torch
+torchvision
+opencv-python
+matplotlib
+scikit-learn
+ultralyticsplus
+numpy
+albumentations
+wandb
+tqdm
+transformers
+scipy
+comet_ml
+pandas
+skimage
+pathlib

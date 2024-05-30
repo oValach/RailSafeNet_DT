@@ -10,6 +10,7 @@ env/
 venv/
 other/
 ENV/
+ultralytics
 env.bak/
 venv.bak/
 models/

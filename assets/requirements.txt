@@ -12,5 +12,5 @@ transformers
 scipy
 comet_ml
 pandas
-skimage
+scikit-image
 pathlib

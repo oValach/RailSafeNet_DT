@@ -10,11 +10,11 @@ import matplotlib.patches as patches
 from ultralyticsplus import YOLO
 from scripts.test_filtered_cls import load, load_model, process
 
-PATH_jpgs = 'assets/rs19val/jpgs/test'
-PATH_model_seg = 'assets/models_pretrained/segformer/SegFormer_B3_1024_finetuned.pth'
-PATH_model_det = 'assets/models_pretrained/ultralyticsplus/yolov8s'
-PATH_base = 'assets/pilsen_railway_dataset/'
-eda_path = "assets/pilsen_railway_dataset/eda_table.table.json"
+PATH_jpgs = 'RailNet_DT/assets/rs19val/jpgs/test'
+PATH_model_seg = 'RailNet_DT/assets/models_pretrained/segformer/SegFormer_B3_1024_finetuned.pth'
+PATH_model_det = 'RailNet_DT/assets/models_pretrained/ultralyticsplus/yolov8s'
+PATH_base = 'RailNet_DT/assets/pilsen_railway_dataset/'
+eda_path = "RailNet_DT/assets/pilsen_railway_dataset/eda_table.table.json"
 data_json = json.load(open(eda_path, 'r'))
 
 def load_yolo(PATH_model):
@@ -797,7 +797,9 @@ def draw_classification(classification, id_map):
 def show_result(classification, id_map, names, borders, image, regions, file_index):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = cv2.resize(image, (id_map.shape[1], id_map.shape[0]), interpolation = cv2.INTER_LINEAR)
-        fig = plt.figure(figsize=(16, 9), dpi=100)
+        ratio = image.shape[0] / image.shape[1]
+        
+        fig = plt.figure(figsize=(16, 16*ratio), dpi=100)
         plt.imshow(image, cmap='gray')
         
         if classification:
@@ -824,8 +826,8 @@ def show_result(classification, id_map, names, borders, image, regions, file_ind
                         for line in side:
                                 line = np.array(line)
                                 plt.plot(line[:,1], line[:,0] ,'-', color='lightgrey', marker=None, linewidth=0.5)
-                                plt.ylim(0, 1080)
-                                plt.xlim(0, 1920)
+                                #plt.ylim(0, 1080)
+                                #plt.xlim(0, 1920)
                                 plt.gca().invert_yaxis()
 
         colors = ['yellow','orange','red']
@@ -835,12 +837,13 @@ def show_result(classification, id_map, names, borders, image, regions, file_ind
                         side = np.array(side)
                         if side.size > 0:
                                 plt.plot(side[:,0],side[:,1] ,'-', color=colors[i], marker=None, linewidth=0.6) #color=colors[i]
-                                plt.ylim(0, 1080)
-                                plt.xlim(0, 1920)
+                                #plt.ylim(0, 1080)
+                                #plt.xlim(0, 1920)
                                 plt.gca().invert_yaxis()
-                
+        
+        plt.xlim(left=0)  # Ensure only positive X values are displayed
+        plt.tight_layout()
         plt.show()
-        #plt.tight_layout()
         #plt.savefig(f'Grafika/Video_export/frames_estimated/frame_{file_index:04d}.jpg', format='jpg', bbox_inches='tight')
         #plt.close()
         print('Frame processed successfully.')

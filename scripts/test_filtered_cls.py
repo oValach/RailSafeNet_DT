@@ -10,9 +10,9 @@ import torch.nn.functional as F
 from scripts.metrics_filtered_cls import compute_map_cls, compute_IoU, image_morpho
 from rs19_val.example_vis import rs19_label2bgr
 
-PATH_jpgs = 'assets/rs19val/jpgs/test'
-PATH_masks = 'assets/rs19val/uint8/test'
-PATH_model = 'assets/models_pretrained/segformer/SegFormer_B3_1024_finetuned.pth'
+PATH_jpgs = 'RailNet_DT/assets/rs19val/jpgs/test'
+PATH_masks = 'RailNet_DT/assets/rs19val/uint8/test'
+PATH_model = 'RailNet_DT/assets/models_pretrained/segformer/SegFormer_B3_1024_finetuned.pth'
 
 def load(filename, PATH_jpgs, input_size=[224,224], dataset_type='rs19val', item = None):
     transform_img = A.Compose([

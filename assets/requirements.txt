@@ -13,4 +13,8 @@ scipy
 comet_ml
 pandas
 scikit-image
+<<<<<<< HEAD
 pathlib
+=======
+pathlib
+>>>>>>> d46a70ee33efac21449f7970c0281907fa1565f5

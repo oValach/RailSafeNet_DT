@@ -1,4 +1,4 @@
-# RailSafeNet - Automatic Detection of Objects in the Track
+# RailSafeNet - Automatic Detection of Objects in the Track 
 
 <img src='assets/README/gif_v2.gif' width=267> <img src='assets/README/gif_v1.gif' width=266> <img src='assets/README/gif_v3.gif' width=267>
 
